@@ -10,6 +10,8 @@ import LoginForm from "@/components/auth/LoginForm";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
+import Products from "@/pages/Products";
+import Sales from "@/pages/Sales";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,8 +32,8 @@ const AppLayout = () => {
           <div className="p-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/products" element={<div className="text-center py-20">Products page coming soon...</div>} />
-              <Route path="/sales" element={<div className="text-center py-20">Sales page coming soon...</div>} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/sales" element={<Sales />} />
               <Route path="/reports" element={<div className="text-center py-20">Reports page coming soon...</div>} />
               <Route path="/users" element={<div className="text-center py-20">Users page coming soon...</div>} />
               <Route path="*" element={<NotFound />} />
