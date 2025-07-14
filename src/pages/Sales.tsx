@@ -1,7 +1,5 @@
-
 import React, { useState } from 'react';
 import { useStore } from '@/contexts/StoreContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +26,6 @@ interface CartItem {
 
 const Sales = () => {
   const { products, addSale } = useStore();
-  const { user } = useAuth();
   const { toast } = useToast();
   
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -138,7 +135,7 @@ const Sales = () => {
           total: item.sellPrice * item.quantity,
         })),
         totalAmount: getTotalAmount(),
-        cashierName: user?.name || 'Unknown',
+        cashierName: 'Store Manager',
       };
 
       addSale(saleData);
@@ -169,7 +166,7 @@ const Sales = () => {
       =====================
       Date: ${new Date().toLocaleDateString()}
       Time: ${new Date().toLocaleTimeString()}
-      Cashier: ${user?.name || 'Unknown'}
+      Cashier: Store Manager
       
       Items:
       ${cart.map(item => 
