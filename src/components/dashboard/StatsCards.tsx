@@ -72,13 +72,8 @@ const StatsCards = () => {
               {stat.changeType === "positive" && (
                 <ArrowUpRight className="w-4 h-4 text-green-500 mr-1" />
               )}
-              {stat.changeType === "negative" && (
-                <ArrowDownRight className="w-4 h-4 text-red-500 mr-1" />
-              )}
               <span className={`text-sm ${
-                stat.changeType === "positive" ? "text-green-600" : 
-                stat.changeType === "negative" ? "text-red-600" : 
-                "text-gray-500"
+                stat.changeType === "positive" ? "text-green-600" : "text-gray-500"
               }`}>
                 {stat.change}
               </span>

@@ -3,7 +3,7 @@ import React from 'react';
 import { useStore } from '@/contexts/StoreContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, DollarSign } from 'lucide-react';
+import { Clock, DollarSign, ShoppingCart } from 'lucide-react';
 
 const RecentSales = () => {
   const { sales } = useStore();
