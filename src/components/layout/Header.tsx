@@ -1,6 +1,5 @@
 
 import React from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Bell, AlertTriangle } from 'lucide-react';
@@ -8,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import LanguageSwitcher from './LanguageSwitcher';
 
 const Header = () => {
-  const { user } = useAuth();
   const { getLowStockProducts } = useStore();
   const { t } = useLanguage();
   
@@ -21,7 +19,7 @@ const Header = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
-              {t('welcome')}, {user?.name}!
+              {t('welcome')} {t('store_pos')}!
             </h2>
             <p className="text-sm text-gray-500">{currentTime}</p>
           </div>

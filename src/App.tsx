@@ -4,10 +4,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { StoreProvider } from "@/contexts/StoreContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import LoginForm from "@/components/auth/LoginForm";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
@@ -18,12 +16,6 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const AppLayout = () => {
-  const { user } = useAuth();
-
-  if (!user) {
-    return <LoginForm />;
-  }
-
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
@@ -36,7 +28,6 @@ const AppLayout = () => {
               <Route path="/products" element={<Products />} />
               <Route path="/sales" element={<Sales />} />
               <Route path="/reports" element={<div className="text-center py-20">Reports page coming soon...</div>} />
-              <Route path="/users" element={<div className="text-center py-20">Users page coming soon...</div>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </div>
@@ -53,11 +44,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <LanguageProvider>
-          <AuthProvider>
-            <StoreProvider>
-              <AppLayout />
-            </StoreProvider>
-          </AuthProvider>
+          <StoreProvider>
+            <AppLayout />
+          </StoreProvider>
         </LanguageProvider>
       </BrowserRouter>
     </TooltipProvider>
