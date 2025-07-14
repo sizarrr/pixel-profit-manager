@@ -2,12 +2,15 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Bell, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const Header = () => {
   const { user } = useAuth();
   const { getLowStockProducts } = useStore();
+  const { t } = useLanguage();
   
   const lowStockProducts = getLowStockProducts();
   const currentTime = new Date().toLocaleString();
@@ -18,7 +21,7 @@ const Header = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
-              Welcome back, {user?.name}!
+              {t('welcome')}, {user?.name}!
             </h2>
             <p className="text-sm text-gray-500">{currentTime}</p>
           </div>
@@ -28,7 +31,7 @@ const Header = () => {
               <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
                 <span className="text-sm text-amber-800">
-                  {lowStockProducts.length} items low in stock
+                  {lowStockProducts.length} {t('items_low_stock')}
                 </span>
                 <Badge variant="secondary" className="bg-amber-200 text-amber-800">
                   {lowStockProducts.length}
@@ -44,6 +47,8 @@ const Header = () => {
                 </Badge>
               )}
             </div>
+            
+            <LanguageSwitcher />
           </div>
         </div>
       </div>

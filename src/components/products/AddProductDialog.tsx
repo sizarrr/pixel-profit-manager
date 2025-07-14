@@ -2,6 +2,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { useStore } from '@/contexts/StoreContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ interface ProductFormData {
 
 const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) => {
   const { addProduct } = useStore();
+  const { t } = useLanguage();
   const { toast } = useToast();
   
   const form = useForm<ProductFormData>({
@@ -61,16 +63,16 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
       });
       
       toast({
-        title: 'Success',
-        description: 'Product added successfully!',
+        title: t('success'),
+        description: t('product_added_success'),
       });
       
       form.reset();
       onClose();
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to add product. Please try again.',
+        title: t('error'),
+        description: t('failed_add_product'),
         variant: 'destructive',
       });
     }
@@ -80,7 +82,7 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Add New Product</DialogTitle>
+          <DialogTitle>{t('add_new_product')}</DialogTitle>
         </DialogHeader>
         
         <Form {...form}>
@@ -88,12 +90,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: 'Product name is required' }}
+              rules={{ required: t('required_field') }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product Name</FormLabel>
+                  <FormLabel>{t('product_name')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter product name" {...field} />
+                    <Input placeholder={`${t('product_name')}`} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -103,10 +105,10 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
             <FormField
               control={form.control}
               name="category"
-              rules={{ required: 'Category is required' }}
+              rules={{ required: t('required_field') }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Category</FormLabel>
+                  <FormLabel>{t('category')}</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g., Laptops, Accessories" {...field} />
                   </FormControl>
@@ -120,12 +122,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
                 control={form.control}
                 name="buyPrice"
                 rules={{ 
-                  required: 'Buy price is required',
-                  min: { value: 0.01, message: 'Price must be greater than 0' }
+                  required: t('required_field'),
+                  min: { value: 0.01, message: t('price_greater_zero') }
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Buy Price ($)</FormLabel>
+                    <FormLabel>{t('buy_price')} ($)</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
@@ -144,12 +146,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
                 control={form.control}
                 name="sellPrice"
                 rules={{ 
-                  required: 'Sell price is required',
-                  min: { value: 0.01, message: 'Price must be greater than 0' }
+                  required: t('required_field'),
+                  min: { value: 0.01, message: t('price_greater_zero') }
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Sell Price ($)</FormLabel>
+                    <FormLabel>{t('sell_price')} ($)</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
@@ -169,12 +171,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
               control={form.control}
               name="quantity"
               rules={{ 
-                required: 'Quantity is required',
-                min: { value: 0, message: 'Quantity cannot be negative' }
+                required: t('required_field'),
+                min: { value: 0, message: t('quantity_not_negative') }
               }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Initial Quantity</FormLabel>
+                  <FormLabel>{t('initial_quantity')}</FormLabel>
                   <FormControl>
                     <Input 
                       type="number" 
@@ -193,9 +195,9 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t('description')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter product description" {...field} />
+                    <Input placeholder={t('description')} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -204,9 +206,9 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({ isOpen, onClose }) 
             
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
+                {t('cancel')}
               </Button>
-              <Button type="submit">Add Product</Button>
+              <Button type="submit">{t('add_product')}</Button>
             </div>
           </form>
         </Form>

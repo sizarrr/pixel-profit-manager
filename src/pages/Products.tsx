@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { useStore } from '@/contexts/StoreContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,7 @@ import EditProductDialog from '@/components/products/EditProductDialog';
 
 const Products = () => {
   const { products, deleteProduct, getLowStockProducts } = useStore();
+  const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -35,7 +37,7 @@ const Products = () => {
   });
 
   const handleDeleteProduct = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
+    if (window.confirm(t('delete_product_confirm'))) {
       deleteProduct(id);
     }
   };
@@ -45,12 +47,12 @@ const Products = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Products</h1>
-          <p className="text-gray-600">Manage your inventory and product catalog</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('products')}</h1>
+          <p className="text-gray-600">{t('manage_inventory')}</p>
         </div>
         <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
           <Plus className="w-4 h-4" />
-          Add Product
+          {t('add_product')}
         </Button>
       </div>
 
@@ -60,12 +62,12 @@ const Products = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-orange-800">
               <AlertTriangle className="w-5 h-5" />
-              Low Stock Alert
+              {t('low_stock_alert')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-orange-700 mb-3">
-              {lowStockProducts.length} products are running low on stock:
+              {lowStockProducts.length} {t('items_low_stock')}:
             </p>
             <div className="flex flex-wrap gap-2">
               {lowStockProducts.map(product => (
@@ -86,7 +88,7 @@ const Products = () => {
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Search products..."
+                  placeholder={`${t('search')} ${t('products').toLowerCase()}...`}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -98,7 +100,7 @@ const Products = () => {
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Categories</option>
+              <option value="all">{t('all_categories')}</option>
               {categories.map(category => (
                 <option key={category} value={category}>{category}</option>
               ))}
@@ -153,12 +155,12 @@ const Products = () => {
                     <span className={`text-sm font-medium ${
                       product.quantity <= 5 ? 'text-red-600' : 'text-gray-700'
                     }`}>
-                      {product.quantity} in stock
+                      {product.quantity} {t('in_stock')}
                     </span>
                   </div>
                   {product.quantity <= 5 && (
                     <Badge variant="outline" className="text-red-600 border-red-300">
-                      Low Stock
+                      {t('low_stock')}
                     </Badge>
                   )}
                 </div>
@@ -166,11 +168,11 @@ const Products = () => {
                 <div className="pt-2 border-t">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-xs text-gray-500">Buy Price</p>
+                      <p className="text-xs text-gray-500">{t('buy_price')}</p>
                       <p className="font-medium">${product.buyPrice}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-gray-500">Sell Price</p>
+                      <p className="text-xs text-gray-500">{t('sell_price')}</p>
                       <p className="font-bold text-green-600 flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
                         {product.sellPrice}
@@ -178,7 +180,7 @@ const Products = () => {
                     </div>
                   </div>
                   <div className="mt-2 text-center">
-                    <p className="text-xs text-gray-500">Profit per unit</p>
+                    <p className="text-xs text-gray-500">{t('profit_per_unit')}</p>
                     <p className="text-sm font-medium text-blue-600">
                       ${(product.sellPrice - product.buyPrice).toFixed(2)}
                     </p>
@@ -194,17 +196,17 @@ const Products = () => {
         <Card>
           <CardContent className="text-center py-12">
             <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No products found</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">{t('no_products_found')}</h3>
             <p className="text-gray-500 mb-4">
               {searchTerm || categoryFilter !== 'all' 
-                ? 'Try adjusting your search or filter criteria.'
-                : 'Get started by adding your first product.'
+                ? t('adjust_search')
+                : t('add_first_product')
               }
             </p>
             {!searchTerm && categoryFilter === 'all' && (
               <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
                 <Plus className="w-4 h-4" />
-                Add Your First Product
+                {t('add_product')}
               </Button>
             )}
           </CardContent>

@@ -2,6 +2,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
@@ -15,13 +16,14 @@ import {
 
 const Sidebar = () => {
   const { user, logout, isAdmin } = useAuth();
+  const { t } = useLanguage();
 
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, current: true },
-    { name: 'Products', href: '/products', icon: Package, current: false },
-    { name: 'Sales', href: '/sales', icon: ShoppingCart, current: false },
-    { name: 'Reports', href: '/reports', icon: BarChart3, current: false },
-    ...(isAdmin() ? [{ name: 'Users', href: '/users', icon: Users, current: false }] : []),
+    { name: t('dashboard'), href: '/', icon: LayoutDashboard, current: true },
+    { name: t('products'), href: '/products', icon: Package, current: false },
+    { name: t('sales'), href: '/sales', icon: ShoppingCart, current: false },
+    { name: t('reports'), href: '/reports', icon: BarChart3, current: false },
+    ...(isAdmin() ? [{ name: t('users'), href: '/users', icon: Users, current: false }] : []),
   ];
 
   return (
@@ -32,7 +34,7 @@ const Sidebar = () => {
             <Monitor className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">Store POS</h1>
+            <h1 className="text-lg font-semibold text-gray-900">{t('store_pos')}</h1>
           </div>
         </div>
       </div>
@@ -73,7 +75,7 @@ const Sidebar = () => {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+                  <p className="text-xs text-gray-500 capitalize">{t(user?.role || 'user')}</p>
                 </div>
               </div>
               
@@ -82,7 +84,7 @@ const Sidebar = () => {
                 className="flex w-full items-center gap-x-3 rounded-md px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
               >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                {t('logout')}
               </button>
             </div>
           </li>
