@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { productsApi, salesApi, analyticsApi } from '@/services/api';
 
 export interface Product {
   id: string;
@@ -31,10 +32,14 @@ export interface Sale {
 interface StoreContextType {
   products: Product[];
   sales: Sale[];
-  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateProduct: (id: string, product: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  addSale: (sale: Omit<Sale, 'id' | 'date'>) => void;
+  loading: boolean;
+  error: string | null;
+  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addSale: (sale: Omit<Sale, 'id' | 'date'>) => Promise<void>;
+  refreshProducts: () => Promise<void>;
+  refreshSales: () => Promise<void>;
   getLowStockProducts: () => Product[];
   getTodaysSales: () => number;
   getMonthlyStats: () => { sales: number; profit: number };
