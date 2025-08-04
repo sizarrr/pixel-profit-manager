@@ -1,78 +1,125 @@
 import express from 'express';
-import { getRow, getAllRows } from '../database/init.js';
+import mongoose from 'mongoose';
+import Product from '../models/Product.js';
+import Sale from '../models/Sale.js';
 
 const router = express.Router();
 
 // GET /api/analytics/dashboard - Get dashboard statistics
 router.get('/dashboard', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     const thisMonth = new Date();
     thisMonth.setDate(1);
-    const thisMonthStr = thisMonth.toISOString().split('T')[0];
+    thisMonth.setHours(0, 0, 0, 0);
 
-    // Today's sales
-    const todaysSales = await getRow(`
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM sales 
-      WHERE DATE(created_at) = ?
-    `, [today]);
+    // Parallel execution of all dashboard queries
+    const [
+      todaysSales,
+      monthlyStats,
+      lowStockProducts,
+      categoryDistribution
+    ] = await Promise.all([
+      // Today's sales
+      Sale.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: today, $lt: tomorrow },
+            status: 'completed'
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$totalAmount' }
+          }
+        }
+      ]),
 
-    // This month's sales and profit calculation
-    const monthlyStats = await getAllRows(`
-      SELECT 
-        s.total_amount,
-        si.product_id,
-        si.quantity,
-        si.sell_price,
-        p.buy_price
-      FROM sales s
-      JOIN sale_items si ON s.id = si.sale_id
-      JOIN products p ON si.product_id = p.id
-      WHERE DATE(s.created_at) >= ?
-    `, [thisMonthStr]);
+      // Monthly sales and profit calculation
+      Sale.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: thisMonth },
+            status: 'completed'
+          }
+        },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'products.productId',
+            foreignField: '_id',
+            as: 'productDetails'
+          }
+        },
+        {
+          $unwind: '$products'
+        },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'products.productId',
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        {
+          $unwind: '$product'
+        },
+        {
+          $group: {
+            _id: null,
+            sales: { $sum: '$products.total' },
+            profit: {
+              $sum: {
+                $multiply: [
+                  { $subtract: ['$products.sellPrice', '$product.buyPrice'] },
+                  '$products.quantity'
+                ]
+              }
+            }
+          }
+        }
+      ]),
 
-    let monthlySales = 0;
-    let monthlyProfit = 0;
+      // Low stock products
+      Product.find({ quantity: { $lte: 5 } })
+        .select('name category quantity')
+        .sort({ quantity: 1 }),
 
-    monthlyStats.forEach(item => {
-      monthlySales += item.sell_price * item.quantity;
-      monthlyProfit += (item.sell_price - item.buy_price) * item.quantity;
-    });
-
-    // Low stock products (quantity <= 5)
-    const lowStockProducts = await getAllRows(`
-      SELECT id, name, category, quantity
-      FROM products 
-      WHERE quantity <= 5 
-      ORDER BY quantity ASC
-    `);
-
-    // Category distribution
-    const categoryDistribution = await getAllRows(`
-      SELECT 
-        category,
-        SUM(sell_price * quantity) as value,
-        SUM(quantity) as count
-      FROM products
-      GROUP BY category
-      ORDER BY value DESC
-    `);
+      // Category distribution
+      Product.aggregate([
+        {
+          $group: {
+            _id: '$category',
+            value: { $sum: { $multiply: ['$sellPrice', '$quantity'] } },
+            count: { $sum: '$quantity' }
+          }
+        },
+        {
+          $sort: { value: -1 }
+        }
+      ])
+    ]);
 
     res.json({
-      todaysSales: todaysSales.total,
+      todaysSales: todaysSales[0]?.total || 0,
       monthlyStats: {
-        sales: monthlySales,
-        profit: monthlyProfit
+        sales: monthlyStats[0]?.sales || 0,
+        profit: monthlyStats[0]?.profit || 0
       },
       lowStockProducts: lowStockProducts.map(product => ({
-        id: product.id,
+        id: product._id,
         name: product.name,
         category: product.category,
         quantity: product.quantity
       })),
       categoryDistribution: categoryDistribution.map(cat => ({
-        name: cat.category,
+        name: cat._id,
         value: cat.value,
         count: cat.count
       }))
@@ -88,23 +135,61 @@ router.get('/monthly-sales', async (req, res) => {
   try {
     const { year = new Date().getFullYear() } = req.query;
     
-    const monthlySalesData = await getAllRows(`
-      SELECT 
-        strftime('%m', s.created_at) as month,
-        SUM(s.total_amount) as sales,
-        SUM((si.sell_price - p.buy_price) * si.quantity) as profit
-      FROM sales s
-      JOIN sale_items si ON s.id = si.sale_id
-      JOIN products p ON si.product_id = p.id
-      WHERE strftime('%Y', s.created_at) = ?
-      GROUP BY strftime('%m', s.created_at)
-      ORDER BY month
-    `, [year.toString()]);
+    const monthlySalesData = await Sale.aggregate([
+      {
+        $match: {
+          createdAt: {
+            $gte: new Date(`${year}-01-01`),
+            $lt: new Date(`${parseInt(year) + 1}-01-01`)
+          },
+          status: 'completed'
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'products.productId',
+          foreignField: '_id',
+          as: 'productDetails'
+        }
+      },
+      {
+        $unwind: '$products'
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'products.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: '$product'
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          sales: { $sum: '$products.total' },
+          profit: {
+            $sum: {
+              $multiply: [
+                { $subtract: ['$products.sellPrice', '$product.buyPrice'] },
+                '$products.quantity'
+              ]
+            }
+          }
+        }
+      },
+      {
+        $sort: { '_id': 1 }
+      }
+    ]);
 
     // Create array for all 12 months
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const result = months.map((month, index) => {
-      const monthData = monthlySalesData.find(data => parseInt(data.month) === index + 1);
+      const monthData = monthlySalesData.find(data => data._id === index + 1);
       return {
         month,
         sales: monthData ? monthData.sales : 0,
@@ -125,29 +210,40 @@ router.get('/top-products', async (req, res) => {
     const { limit = 10, period = '30' } = req.query;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(period));
-    const startDateStr = startDate.toISOString().split('T')[0];
 
-    const topProducts = await getAllRows(`
-      SELECT 
-        si.product_name,
-        si.product_id,
-        SUM(si.quantity) as total_sold,
-        SUM(si.total) as total_revenue,
-        COUNT(DISTINCT si.sale_id) as times_sold
-      FROM sale_items si
-      JOIN sales s ON si.sale_id = s.id
-      WHERE DATE(s.created_at) >= ?
-      GROUP BY si.product_id, si.product_name
-      ORDER BY total_sold DESC
-      LIMIT ?
-    `, [startDateStr, parseInt(limit)]);
+    const topProducts = await Sale.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+          status: 'completed'
+        }
+      },
+      {
+        $unwind: '$products'
+      },
+      {
+        $group: {
+          _id: '$products.productId',
+          productName: { $first: '$products.productName' },
+          totalSold: { $sum: '$products.quantity' },
+          totalRevenue: { $sum: '$products.total' },
+          timesSold: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { totalSold: -1 }
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
 
     res.json(topProducts.map(product => ({
-      productId: product.product_id,
-      productName: product.product_name,
-      totalSold: product.total_sold,
-      totalRevenue: product.total_revenue,
-      timesSold: product.times_sold
+      productId: product._id,
+      productName: product.productName,
+      totalSold: product.totalSold,
+      totalRevenue: product.totalRevenue,
+      timesSold: product.timesSold
     })));
   } catch (error) {
     console.error('Error fetching top products:', error);
@@ -164,36 +260,70 @@ router.get('/sales-by-date', async (req, res) => {
       return res.status(400).json({ error: 'Start date and end date are required' });
     }
 
-    let dateFormat;
+    let dateGrouping;
     switch (groupBy) {
       case 'month':
-        dateFormat = '%Y-%m';
+        dateGrouping = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' }
+        };
         break;
       case 'week':
-        dateFormat = '%Y-%W';
+        dateGrouping = {
+          year: { $year: '$createdAt' },
+          week: { $week: '$createdAt' }
+        };
         break;
       default:
-        dateFormat = '%Y-%m-%d';
+        dateGrouping = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' }
+        };
     }
 
-    const salesData = await getAllRows(`
-      SELECT 
-        strftime('${dateFormat}', created_at) as period,
-        COUNT(*) as transaction_count,
-        SUM(total_amount) as total_sales,
-        AVG(total_amount) as average_sale
-      FROM sales
-      WHERE DATE(created_at) BETWEEN ? AND ?
-      GROUP BY strftime('${dateFormat}', created_at)
-      ORDER BY period
-    `, [startDate, endDate]);
+    const salesData = await Sale.aggregate([
+      {
+        $match: {
+          createdAt: {
+            $gte: new Date(startDate),
+            $lte: new Date(endDate)
+          },
+          status: 'completed'
+        }
+      },
+      {
+        $group: {
+          _id: dateGrouping,
+          transactionCount: { $sum: 1 },
+          totalSales: { $sum: '$totalAmount' },
+          averageSale: { $avg: '$totalAmount' }
+        }
+      },
+      {
+        $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1, '_id.week': 1 }
+      }
+    ]);
 
-    res.json(salesData.map(data => ({
-      period: data.period,
-      transactionCount: data.transaction_count,
-      totalSales: data.total_sales,
-      averageSale: data.average_sale
-    })));
+    const formattedData = salesData.map(data => {
+      let period;
+      if (groupBy === 'month') {
+        period = `${data._id.year}-${String(data._id.month).padStart(2, '0')}`;
+      } else if (groupBy === 'week') {
+        period = `${data._id.year}-W${String(data._id.week).padStart(2, '0')}`;
+      } else {
+        period = `${data._id.year}-${String(data._id.month).padStart(2, '0')}-${String(data._id.day).padStart(2, '0')}`;
+      }
+
+      return {
+        period,
+        transactionCount: data.transactionCount,
+        totalSales: data.totalSales,
+        averageSale: data.averageSale
+      };
+    });
+
+    res.json(formattedData);
   } catch (error) {
     console.error('Error fetching sales by date:', error);
     res.status(500).json({ error: 'Failed to fetch sales by date' });
@@ -203,42 +333,59 @@ router.get('/sales-by-date', async (req, res) => {
 // GET /api/analytics/inventory-value - Get total inventory value
 router.get('/inventory-value', async (req, res) => {
   try {
-    const inventoryValue = await getRow(`
-      SELECT 
-        SUM(buy_price * quantity) as cost_value,
-        SUM(sell_price * quantity) as retail_value,
-        COUNT(*) as total_products,
-        SUM(quantity) as total_items
-      FROM products
-    `);
+    const [inventoryValue, categoryBreakdown] = await Promise.all([
+      // Overall inventory summary
+      Product.aggregate([
+        {
+          $group: {
+            _id: null,
+            costValue: { $sum: { $multiply: ['$buyPrice', '$quantity'] } },
+            retailValue: { $sum: { $multiply: ['$sellPrice', '$quantity'] } },
+            totalProducts: { $sum: 1 },
+            totalItems: { $sum: '$quantity' }
+          }
+        }
+      ]),
 
-    const categoryBreakdown = await getAllRows(`
-      SELECT 
-        category,
-        SUM(buy_price * quantity) as cost_value,
-        SUM(sell_price * quantity) as retail_value,
-        COUNT(*) as product_count,
-        SUM(quantity) as item_count
-      FROM products
-      GROUP BY category
-      ORDER BY retail_value DESC
-    `);
+      // Category breakdown
+      Product.aggregate([
+        {
+          $group: {
+            _id: '$category',
+            costValue: { $sum: { $multiply: ['$buyPrice', '$quantity'] } },
+            retailValue: { $sum: { $multiply: ['$sellPrice', '$quantity'] } },
+            productCount: { $sum: 1 },
+            itemCount: { $sum: '$quantity' }
+          }
+        },
+        {
+          $sort: { retailValue: -1 }
+        }
+      ])
+    ]);
+
+    const summary = inventoryValue[0] || {
+      costValue: 0,
+      retailValue: 0,
+      totalProducts: 0,
+      totalItems: 0
+    };
 
     res.json({
       summary: {
-        costValue: inventoryValue.cost_value || 0,
-        retailValue: inventoryValue.retail_value || 0,
-        totalProducts: inventoryValue.total_products,
-        totalItems: inventoryValue.total_items,
-        potentialProfit: (inventoryValue.retail_value || 0) - (inventoryValue.cost_value || 0)
+        costValue: summary.costValue,
+        retailValue: summary.retailValue,
+        totalProducts: summary.totalProducts,
+        totalItems: summary.totalItems,
+        potentialProfit: summary.retailValue - summary.costValue
       },
       categoryBreakdown: categoryBreakdown.map(cat => ({
-        category: cat.category,
-        costValue: cat.cost_value,
-        retailValue: cat.retail_value,
-        productCount: cat.product_count,
-        itemCount: cat.item_count,
-        potentialProfit: cat.retail_value - cat.cost_value
+        category: cat._id,
+        costValue: cat.costValue,
+        retailValue: cat.retailValue,
+        productCount: cat.productCount,
+        itemCount: cat.itemCount,
+        potentialProfit: cat.retailValue - cat.costValue
       }))
     });
   } catch (error) {
@@ -251,27 +398,58 @@ router.get('/inventory-value', async (req, res) => {
 router.get('/profit-analysis', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-    const start = startDate || thirtyDaysAgoStr;
-    const end = endDate || today;
+    const start = startDate ? new Date(startDate) : thirtyDaysAgo;
+    const end = endDate ? new Date(endDate) : today;
 
-    const profitData = await getAllRows(`
-      SELECT 
-        s.created_at,
-        s.total_amount as revenue,
-        SUM((si.sell_price - p.buy_price) * si.quantity) as profit,
-        SUM(p.buy_price * si.quantity) as cost
-      FROM sales s
-      JOIN sale_items si ON s.id = si.sale_id
-      JOIN products p ON si.product_id = p.id
-      WHERE DATE(s.created_at) BETWEEN ? AND ?
-      GROUP BY s.id, s.created_at, s.total_amount
-      ORDER BY s.created_at DESC
-    `, [start, end]);
+    const profitData = await Sale.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: start, $lte: end },
+          status: 'completed'
+        }
+      },
+      {
+        $unwind: '$products'
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'products.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: '$product'
+      },
+      {
+        $group: {
+          _id: '$_id',
+          createdAt: { $first: '$createdAt' },
+          revenue: { $first: '$totalAmount' },
+          cost: {
+            $sum: {
+              $multiply: ['$product.buyPrice', '$products.quantity']
+            }
+          },
+          profit: {
+            $sum: {
+              $multiply: [
+                { $subtract: ['$products.sellPrice', '$product.buyPrice'] },
+                '$products.quantity'
+              ]
+            }
+          }
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      }
+    ]);
 
     const summary = profitData.reduce((acc, sale) => ({
       totalRevenue: acc.totalRevenue + sale.revenue,
@@ -289,17 +467,127 @@ router.get('/profit-analysis', async (req, res) => {
         averageProfit: summary.transactionCount > 0 ? summary.totalProfit / summary.transactionCount : 0
       },
       transactions: profitData.map(sale => ({
-        date: sale.created_at,
+        date: sale.createdAt,
         revenue: sale.revenue,
         profit: sale.profit,
         cost: sale.cost,
         profitMargin: sale.revenue > 0 ? (sale.profit / sale.revenue) * 100 : 0
       })),
-      dateRange: { start, end }
+      dateRange: { 
+        start: start.toISOString().split('T')[0], 
+        end: end.toISOString().split('T')[0] 
+      }
     });
   } catch (error) {
     console.error('Error fetching profit analysis:', error);
     res.status(500).json({ error: 'Failed to fetch profit analysis' });
+  }
+});
+
+// GET /api/analytics/cashier-performance - Get cashier performance metrics
+router.get('/cashier-performance', async (req, res) => {
+  try {
+    const { period = '30' } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(period));
+
+    const cashierStats = await Sale.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+          status: 'completed'
+        }
+      },
+      {
+        $group: {
+          _id: '$cashierName',
+          totalSales: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' },
+          averageSale: { $avg: '$totalAmount' },
+          totalItems: { $sum: { $sum: '$products.quantity' } }
+        }
+      },
+      {
+        $sort: { totalRevenue: -1 }
+      }
+    ]);
+
+    res.json(cashierStats.map(cashier => ({
+      cashierName: cashier._id,
+      totalSales: cashier.totalSales,
+      totalRevenue: cashier.totalRevenue,
+      averageSale: cashier.averageSale,
+      totalItems: cashier.totalItems
+    })));
+  } catch (error) {
+    console.error('Error fetching cashier performance:', error);
+    res.status(500).json({ error: 'Failed to fetch cashier performance' });
+  }
+});
+
+// GET /api/analytics/product-performance - Get detailed product performance
+router.get('/product-performance', async (req, res) => {
+  try {
+    const { period = '30', category } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(period));
+
+    let matchStage = {
+      createdAt: { $gte: startDate },
+      status: 'completed'
+    };
+
+    const productPerformance = await Sale.aggregate([
+      { $match: matchStage },
+      { $unwind: '$products' },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'products.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' },
+      ...(category ? [{ $match: { 'product.category': category } }] : []),
+      {
+        $group: {
+          _id: '$products.productId',
+          productName: { $first: '$products.productName' },
+          category: { $first: '$product.category' },
+          currentStock: { $first: '$product.quantity' },
+          totalSold: { $sum: '$products.quantity' },
+          totalRevenue: { $sum: '$products.total' },
+          averagePrice: { $avg: '$products.sellPrice' },
+          timesSold: { $sum: 1 },
+          profit: {
+            $sum: {
+              $multiply: [
+                { $subtract: ['$products.sellPrice', '$product.buyPrice'] },
+                '$products.quantity'
+              ]
+            }
+          }
+        }
+      },
+      { $sort: { totalRevenue: -1 } }
+    ]);
+
+    res.json(productPerformance.map(product => ({
+      productId: product._id,
+      productName: product.productName,
+      category: product.category,
+      currentStock: product.currentStock,
+      totalSold: product.totalSold,
+      totalRevenue: product.totalRevenue,
+      averagePrice: product.averagePrice,
+      timesSold: product.timesSold,
+      profit: product.profit,
+      profitMargin: product.totalRevenue > 0 ? (product.profit / product.totalRevenue) * 100 : 0
+    })));
+  } catch (error) {
+    console.error('Error fetching product performance:', error);
+    res.status(500).json({ error: 'Failed to fetch product performance' });
   }
 });
 

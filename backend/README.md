@@ -7,9 +7,10 @@ A Node.js/Express backend API for a Point of Sale (POS) system with inventory ma
 - **Product Management**: CRUD operations for products with categories and inventory tracking
 - **Sales Processing**: Complete sales workflow with automatic inventory updates
 - **Analytics**: Dashboard statistics, sales reports, and profit analysis
-- **Transaction Safety**: Database transactions ensure data consistency
-- **Validation**: Input validation and error handling
-- **SQLite Database**: Lightweight, file-based database for easy deployment
+- **Transaction Safety**: MongoDB transactions ensure data consistency
+- **Validation**: Input validation and error handling with Mongoose schemas
+- **MongoDB Database**: Scalable NoSQL database with powerful aggregation capabilities
+- **Advanced Analytics**: Complex reporting using MongoDB aggregation pipelines
 
 ## API Endpoints
 
@@ -41,6 +42,7 @@ A Node.js/Express backend API for a Point of Sale (POS) system with inventory ma
 ### Prerequisites
 - Node.js (v16 or higher)
 - npm or yarn
+- MongoDB (v4.4 or higher) - either local installation or MongoDB Atlas
 
 ### Installation
 
@@ -58,15 +60,29 @@ A Node.js/Express backend API for a Point of Sale (POS) system with inventory ma
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` file if needed (default values should work for development).
+   Edit `.env` file to configure your MongoDB connection:
+   - For local MongoDB: `MONGODB_URI=mongodb://localhost:27017/pos_system`
+   - For MongoDB Atlas: `MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/pos_system`
 
-4. **Initialize and seed the database**:
+4. **Start MongoDB** (if using local installation):
+   ```bash
+   # On macOS with Homebrew
+   brew services start mongodb-community
+   
+   # On Ubuntu/Debian
+   sudo systemctl start mongod
+   
+   # On Windows
+   net start MongoDB
+   ```
+
+5. **Initialize and seed the database**:
    ```bash
    npm run seed
    ```
-   This will create the SQLite database and populate it with sample data.
+   This will connect to MongoDB and populate it with sample data.
 
-5. **Start the development server**:
+6. **Start the development server**:
    ```bash
    npm run dev
    ```
@@ -83,6 +99,7 @@ A Node.js/Express backend API for a Point of Sale (POS) system with inventory ma
    ```bash
    export NODE_ENV=production
    export PORT=3001
+   export MONGODB_URI=your_mongodb_connection_string
    ```
 
 3. **Start the server**:
@@ -92,32 +109,42 @@ A Node.js/Express backend API for a Point of Sale (POS) system with inventory ma
 
 ## Database Schema
 
-### Products Table
-- `id` (TEXT PRIMARY KEY)
-- `name` (TEXT NOT NULL)
-- `category` (TEXT NOT NULL)
-- `buy_price` (REAL NOT NULL)
-- `sell_price` (REAL NOT NULL)
-- `quantity` (INTEGER NOT NULL)
-- `description` (TEXT)
-- `image` (TEXT)
-- `created_at` (DATETIME)
-- `updated_at` (DATETIME)
+### Products Collection
+```javascript
+{
+  _id: ObjectId,
+  name: String (required),
+  category: String (required),
+  buyPrice: Number (required, min: 0),
+  sellPrice: Number (required, min: 0),
+  quantity: Number (required, min: 0, default: 0),
+  description: String,
+  image: String,
+  createdAt: Date (auto-generated),
+  updatedAt: Date (auto-generated)
+}
+```
 
-### Sales Table
-- `id` (TEXT PRIMARY KEY)
-- `total_amount` (REAL NOT NULL)
-- `cashier_name` (TEXT NOT NULL)
-- `created_at` (DATETIME)
-
-### Sale Items Table
-- `id` (TEXT PRIMARY KEY)
-- `sale_id` (TEXT NOT NULL)
-- `product_id` (TEXT NOT NULL)
-- `product_name` (TEXT NOT NULL)
-- `quantity` (INTEGER NOT NULL)
-- `sell_price` (REAL NOT NULL)
-- `total` (REAL NOT NULL)
+### Sales Collection
+```javascript
+{
+  _id: ObjectId,
+  products: [{
+    productId: ObjectId (ref: Product),
+    productName: String (required),
+    quantity: Number (required, min: 1),
+    sellPrice: Number (required, min: 0),
+    total: Number (required, min: 0)
+  }],
+  totalAmount: Number (required, min: 0),
+  cashierName: String (required),
+  paymentMethod: String (enum: ['cash', 'card', 'digital'], default: 'cash'),
+  status: String (enum: ['completed', 'voided', 'refunded'], default: 'completed'),
+  notes: String,
+  createdAt: Date (auto-generated),
+  updatedAt: Date (auto-generated)
+}
+```
 
 ## API Usage Examples
 
@@ -170,7 +197,10 @@ curl http://localhost:3001/api/analytics/dashboard
 backend/
 ├── src/
 │   ├── database/
-│   │   └── init.js          # Database setup and helpers
+│   │   └── connection.js    # MongoDB connection setup
+│   ├── models/
+│   │   ├── Product.js       # Product Mongoose model
+│   │   └── Sale.js          # Sale Mongoose model
 │   ├── routes/
 │   │   ├── products.js      # Product endpoints
 │   │   ├── sales.js         # Sales endpoints
@@ -195,8 +225,10 @@ The API includes comprehensive error handling:
 
 - Helmet.js for security headers
 - CORS configuration
-- Input validation and sanitization
-- SQL injection prevention with parameterized queries
+- Input validation and sanitization with express-validator
+- MongoDB injection prevention with Mongoose
+- Schema validation and type checking
+- Transaction support for data consistency
 
 ## Contributing
 

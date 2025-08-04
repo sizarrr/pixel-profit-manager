@@ -1,10 +1,11 @@
-import { v4 as uuidv4 } from 'uuid';
-import { runQuery, initializeDatabase, closeDatabase } from '../database/init.js';
+import mongoose from 'mongoose';
+import { connectDatabase } from '../database/connection.js';
+import Product from '../models/Product.js';
+import Sale from '../models/Sale.js';
 
 // Sample products data (matching the original mock data)
 const sampleProducts = [
   {
-    id: uuidv4(),
     name: 'Gaming Laptop RTX 4060',
     category: 'Laptops',
     buyPrice: 800,
@@ -13,7 +14,6 @@ const sampleProducts = [
     description: 'High-performance gaming laptop with RTX 4060'
   },
   {
-    id: uuidv4(),
     name: 'Wireless Gaming Mouse',
     category: 'Accessories',
     buyPrice: 25,
@@ -22,7 +22,6 @@ const sampleProducts = [
     description: 'Ergonomic wireless gaming mouse'
   },
   {
-    id: uuidv4(),
     name: 'Mechanical Keyboard RGB',
     category: 'Accessories',
     buyPrice: 60,
@@ -31,7 +30,6 @@ const sampleProducts = [
     description: 'RGB mechanical keyboard with Cherry MX switches'
   },
   {
-    id: uuidv4(),
     name: '27" 4K Monitor',
     category: 'Monitors',
     buyPrice: 300,
@@ -40,7 +38,6 @@ const sampleProducts = [
     description: '27-inch 4K UHD monitor with HDR support'
   },
   {
-    id: uuidv4(),
     name: 'Gaming Headset Pro',
     category: 'Accessories',
     buyPrice: 80,
@@ -49,7 +46,6 @@ const sampleProducts = [
     description: 'Professional gaming headset with 7.1 surround sound'
   },
   {
-    id: uuidv4(),
     name: 'SSD 1TB NVMe',
     category: 'Storage',
     buyPrice: 90,
@@ -58,7 +54,6 @@ const sampleProducts = [
     description: 'High-speed NVMe SSD 1TB capacity'
   },
   {
-    id: uuidv4(),
     name: 'Graphics Card RTX 4070',
     category: 'Components',
     buyPrice: 500,
@@ -67,7 +62,6 @@ const sampleProducts = [
     description: 'NVIDIA GeForce RTX 4070 graphics card'
   },
   {
-    id: uuidv4(),
     name: 'Webcam 4K Ultra',
     category: 'Accessories',
     buyPrice: 120,
@@ -76,7 +70,6 @@ const sampleProducts = [
     description: '4K Ultra HD webcam for streaming and video calls'
   },
   {
-    id: uuidv4(),
     name: 'Gaming Chair Ergonomic',
     category: 'Furniture',
     buyPrice: 200,
@@ -85,7 +78,6 @@ const sampleProducts = [
     description: 'Ergonomic gaming chair with lumbar support'
   },
   {
-    id: uuidv4(),
     name: 'USB-C Hub Multi-port',
     category: 'Accessories',
     buyPrice: 35,
@@ -99,131 +91,160 @@ const sampleProducts = [
 const seedProducts = async () => {
   console.log('🌱 Seeding products...');
   
-  for (const product of sampleProducts) {
-    try {
-      await runQuery(`
-        INSERT INTO products (id, name, category, buy_price, sell_price, quantity, description, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        product.id,
-        product.name,
-        product.category,
-        product.buyPrice,
-        product.sellPrice,
-        product.quantity,
-        product.description,
-        '' // empty image for now
-      ]);
-      
-      console.log(`✅ Added product: ${product.name}`);
-    } catch (error) {
-      console.error(`❌ Error adding product ${product.name}:`, error.message);
-    }
+  try {
+    const products = await Product.insertMany(sampleProducts);
+    console.log(`✅ Added ${products.length} products successfully`);
+    return products;
+  } catch (error) {
+    console.error('❌ Error seeding products:', error.message);
+    throw error;
   }
 };
 
 // Function to seed sample sales
-const seedSales = async () => {
+const seedSales = async (products) => {
   console.log('🌱 Seeding sample sales...');
   
-  // Get some products for sample sales
-  const laptopProduct = sampleProducts.find(p => p.name.includes('Gaming Laptop'));
-  const mouseProduct = sampleProducts.find(p => p.name.includes('Wireless Gaming Mouse'));
-  const keyboardProduct = sampleProducts.find(p => p.name.includes('Mechanical Keyboard'));
-  const headsetProduct = sampleProducts.find(p => p.name.includes('Gaming Headset'));
-  
-  // Sample sales data
-  const sampleSales = [
-    {
-      id: uuidv4(),
-      products: [
-        {
-          productId: laptopProduct.id,
-          productName: laptopProduct.name,
-          quantity: 1,
-          sellPrice: laptopProduct.sellPrice,
-          total: laptopProduct.sellPrice * 1
-        }
-      ],
-      totalAmount: laptopProduct.sellPrice,
-      cashierName: 'Store Manager',
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: uuidv4(),
-      products: [
-        {
-          productId: mouseProduct.id,
-          productName: mouseProduct.name,
-          quantity: 2,
-          sellPrice: mouseProduct.sellPrice,
-          total: mouseProduct.sellPrice * 2
-        },
-        {
-          productId: keyboardProduct.id,
-          productName: keyboardProduct.name,
-          quantity: 1,
-          sellPrice: keyboardProduct.sellPrice,
-          total: keyboardProduct.sellPrice * 1
-        }
-      ],
-      totalAmount: (mouseProduct.sellPrice * 2) + (keyboardProduct.sellPrice * 1),
-      cashierName: 'Store Cashier',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // Yesterday
-    },
-    {
-      id: uuidv4(),
-      products: [
-        {
-          productId: headsetProduct.id,
-          productName: headsetProduct.name,
-          quantity: 1,
-          sellPrice: headsetProduct.sellPrice,
-          total: headsetProduct.sellPrice * 1
-        }
-      ],
-      totalAmount: headsetProduct.sellPrice,
-      cashierName: 'Store Manager',
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days ago
-    }
-  ];
+  try {
+    // Get some products for sample sales
+    const laptopProduct = products.find(p => p.name.includes('Gaming Laptop'));
+    const mouseProduct = products.find(p => p.name.includes('Wireless Gaming Mouse'));
+    const keyboardProduct = products.find(p => p.name.includes('Mechanical Keyboard'));
+    const headsetProduct = products.find(p => p.name.includes('Gaming Headset'));
+    const monitorProduct = products.find(p => p.name.includes('4K Monitor'));
 
-  for (const sale of sampleSales) {
+    // Sample sales data with different dates
+    const sampleSales = [
+      {
+        products: [
+          {
+            productId: laptopProduct._id,
+            productName: laptopProduct.name,
+            quantity: 1,
+            sellPrice: laptopProduct.sellPrice,
+            total: laptopProduct.sellPrice * 1
+          }
+        ],
+        totalAmount: laptopProduct.sellPrice,
+        cashierName: 'Store Manager',
+        paymentMethod: 'card',
+        status: 'completed',
+        createdAt: new Date() // Today
+      },
+      {
+        products: [
+          {
+            productId: mouseProduct._id,
+            productName: mouseProduct.name,
+            quantity: 2,
+            sellPrice: mouseProduct.sellPrice,
+            total: mouseProduct.sellPrice * 2
+          },
+          {
+            productId: keyboardProduct._id,
+            productName: keyboardProduct.name,
+            quantity: 1,
+            sellPrice: keyboardProduct.sellPrice,
+            total: keyboardProduct.sellPrice * 1
+          }
+        ],
+        totalAmount: (mouseProduct.sellPrice * 2) + (keyboardProduct.sellPrice * 1),
+        cashierName: 'Store Cashier',
+        paymentMethod: 'cash',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) // Yesterday
+      },
+      {
+        products: [
+          {
+            productId: headsetProduct._id,
+            productName: headsetProduct.name,
+            quantity: 1,
+            sellPrice: headsetProduct.sellPrice,
+            total: headsetProduct.sellPrice * 1
+          }
+        ],
+        totalAmount: headsetProduct.sellPrice,
+        cashierName: 'Store Manager',
+        paymentMethod: 'digital',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) // 2 days ago
+      },
+      {
+        products: [
+          {
+            productId: monitorProduct._id,
+            productName: monitorProduct.name,
+            quantity: 2,
+            sellPrice: monitorProduct.sellPrice,
+            total: monitorProduct.sellPrice * 2
+          }
+        ],
+        totalAmount: monitorProduct.sellPrice * 2,
+        cashierName: 'Store Cashier',
+        paymentMethod: 'card',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 1 week ago
+      },
+      {
+        products: [
+          {
+            productId: laptopProduct._id,
+            productName: laptopProduct.name,
+            quantity: 1,
+            sellPrice: laptopProduct.sellPrice,
+            total: laptopProduct.sellPrice * 1
+          },
+          {
+            productId: mouseProduct._id,
+            productName: mouseProduct.name,
+            quantity: 1,
+            sellPrice: mouseProduct.sellPrice,
+            total: mouseProduct.sellPrice * 1
+          }
+        ],
+        totalAmount: laptopProduct.sellPrice + mouseProduct.sellPrice,
+        cashierName: 'Store Manager',
+        paymentMethod: 'card',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) // 10 days ago
+      }
+    ];
+
+    // Use MongoDB session for transaction
+    const session = await mongoose.startSession();
+    
     try {
-      // Insert sale
-      await runQuery(`
-        INSERT INTO sales (id, total_amount, cashier_name, created_at)
-        VALUES (?, ?, ?, ?)
-      `, [sale.id, sale.totalAmount, sale.cashierName, sale.createdAt]);
+      session.startTransaction();
 
-      // Insert sale items
-      for (const product of sale.products) {
-        const saleItemId = uuidv4();
-        await runQuery(`
-          INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, sell_price, total)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [
-          saleItemId,
-          sale.id,
-          product.productId,
-          product.productName,
-          product.quantity,
-          product.sellPrice,
-          product.total
-        ]);
+      for (const saleData of sampleSales) {
+        // Create the sale
+        const sale = new Sale(saleData);
+        await sale.save({ session });
 
-        // Update product inventory
-        await runQuery(`
-          UPDATE products 
-          SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [product.quantity, product.productId]);
+        // Update product quantities
+        for (const item of saleData.products) {
+          await Product.findByIdAndUpdate(
+            item.productId,
+            { $inc: { quantity: -item.quantity } },
+            { session }
+          );
+        }
+
+        console.log(`✅ Added sale: $${saleData.totalAmount} by ${saleData.cashierName}`);
       }
 
-      console.log(`✅ Added sale: $${sale.totalAmount} by ${sale.cashierName}`);
+      await session.commitTransaction();
+      console.log(`✅ Added ${sampleSales.length} sample sales successfully`);
     } catch (error) {
-      console.error(`❌ Error adding sale:`, error.message);
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
+  } catch (error) {
+    console.error('❌ Error seeding sales:', error.message);
+    throw error;
   }
 };
 
@@ -232,27 +253,35 @@ const seedDatabase = async () => {
   try {
     console.log('🚀 Starting database seeding...');
     
-    // Initialize database
-    await initializeDatabase();
+    // Connect to database
+    await connectDatabase();
     
     // Clear existing data (optional - comment out if you want to keep existing data)
     console.log('🧹 Clearing existing data...');
-    await runQuery('DELETE FROM sale_items');
-    await runQuery('DELETE FROM sales');
-    await runQuery('DELETE FROM products');
+    await Sale.deleteMany({});
+    await Product.deleteMany({});
     
     // Seed data
-    await seedProducts();
-    await seedSales();
+    const products = await seedProducts();
+    await seedSales(products);
     
     console.log('✅ Database seeding completed successfully!');
-    console.log(`📊 Added ${sampleProducts.length} products and 3 sample sales`);
+    console.log(`📊 Added ${sampleProducts.length} products and sample sales`);
+    
+    // Get final counts
+    const [productCount, salesCount] = await Promise.all([
+      Product.countDocuments(),
+      Sale.countDocuments()
+    ]);
+    
+    console.log(`📈 Final counts: ${productCount} products, ${salesCount} sales`);
     
   } catch (error) {
     console.error('❌ Error seeding database:', error);
     process.exit(1);
   } finally {
-    await closeDatabase();
+    await mongoose.connection.close();
+    console.log('🔒 Database connection closed');
   }
 };
 

@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { v4 as uuidv4 } from 'uuid';
-import { runQuery, getRow, getAllRows } from '../database/init.js';
+import Product from '../models/Product.js';
+import Sale from '../models/Sale.js';
 
 const router = express.Router();
 
@@ -18,44 +18,47 @@ const validateProduct = [
 // GET /api/products - Get all products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, lowStock } = req.query;
-    let sql = 'SELECT * FROM products WHERE 1=1';
-    const params = [];
+    const { category, search, lowStock, page = 1, limit = 50 } = req.query;
+    let query = {};
 
+    // Build query filters
     if (category && category !== 'all') {
-      sql += ' AND category = ?';
-      params.push(category);
+      query.category = category;
     }
 
     if (search) {
-      sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
     }
 
     if (lowStock === 'true') {
-      sql += ' AND quantity <= 5';
+      query.quantity = { $lte: 5 };
     }
 
-    sql += ' ORDER BY created_at DESC';
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const products = await getAllRows(sql, params);
-    
-    // Convert database format to frontend format
-    const formattedProducts = products.map(product => ({
-      id: product.id,
-      name: product.name,
-      category: product.category,
-      buyPrice: product.buy_price,
-      sellPrice: product.sell_price,
-      quantity: product.quantity,
-      description: product.description,
-      image: product.image,
-      createdAt: new Date(product.created_at),
-      updatedAt: new Date(product.updated_at)
-    }));
+    // Execute query with pagination
+    const [products, total] = await Promise.all([
+      Product.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Product.countDocuments(query)
+    ]);
 
-    res.json(formattedProducts);
+    res.json({
+      products,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
     console.error('Error fetching products:', error);
     res.status(500).json({ error: 'Failed to fetch products' });
@@ -66,28 +69,18 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const product = await getRow('SELECT * FROM products WHERE id = ?', [id]);
+    const product = await Product.findById(id);
     
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const formattedProduct = {
-      id: product.id,
-      name: product.name,
-      category: product.category,
-      buyPrice: product.buy_price,
-      sellPrice: product.sell_price,
-      quantity: product.quantity,
-      description: product.description,
-      image: product.image,
-      createdAt: new Date(product.created_at),
-      updatedAt: new Date(product.updated_at)
-    };
-
-    res.json(formattedProduct);
+    res.json(product);
   } catch (error) {
     console.error('Error fetching product:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid product ID' });
+    }
     res.status(500).json({ error: 'Failed to fetch product' });
   }
 });
@@ -100,35 +93,20 @@ router.post('/', validateProduct, async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, category, buyPrice, sellPrice, quantity, description, image } = req.body;
-    const id = uuidv4();
+    const productData = req.body;
+    const product = new Product(productData);
     
-    const sql = `
-      INSERT INTO products (id, name, category, buy_price, sell_price, quantity, description, image)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    await product.save();
     
-    await runQuery(sql, [id, name, category, buyPrice, sellPrice, quantity, description || '', image || '']);
-    
-    // Fetch the created product
-    const newProduct = await getRow('SELECT * FROM products WHERE id = ?', [id]);
-    
-    const formattedProduct = {
-      id: newProduct.id,
-      name: newProduct.name,
-      category: newProduct.category,
-      buyPrice: newProduct.buy_price,
-      sellPrice: newProduct.sell_price,
-      quantity: newProduct.quantity,
-      description: newProduct.description,
-      image: newProduct.image,
-      createdAt: new Date(newProduct.created_at),
-      updatedAt: new Date(newProduct.updated_at)
-    };
-
-    res.status(201).json(formattedProduct);
+    res.status(201).json(product);
   } catch (error) {
     console.error('Error creating product:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation error',
+        details: Object.values(error.errors).map(err => err.message)
+      });
+    }
     res.status(500).json({ error: 'Failed to create product' });
   }
 });
@@ -142,42 +120,30 @@ router.put('/:id', validateProduct, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, category, buyPrice, sellPrice, quantity, description, image } = req.body;
+    const updateData = req.body;
 
-    // Check if product exists
-    const existingProduct = await getRow('SELECT * FROM products WHERE id = ?', [id]);
-    if (!existingProduct) {
+    const product = await Product.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const sql = `
-      UPDATE products 
-      SET name = ?, category = ?, buy_price = ?, sell_price = ?, quantity = ?, 
-          description = ?, image = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `;
-    
-    await runQuery(sql, [name, category, buyPrice, sellPrice, quantity, description || '', image || '', id]);
-    
-    // Fetch the updated product
-    const updatedProduct = await getRow('SELECT * FROM products WHERE id = ?', [id]);
-    
-    const formattedProduct = {
-      id: updatedProduct.id,
-      name: updatedProduct.name,
-      category: updatedProduct.category,
-      buyPrice: updatedProduct.buy_price,
-      sellPrice: updatedProduct.sell_price,
-      quantity: updatedProduct.quantity,
-      description: updatedProduct.description,
-      image: updatedProduct.image,
-      createdAt: new Date(updatedProduct.created_at),
-      updatedAt: new Date(updatedProduct.updated_at)
-    };
-
-    res.json(formattedProduct);
+    res.json(product);
   } catch (error) {
     console.error('Error updating product:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid product ID' });
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation error',
+        details: Object.values(error.errors).map(err => err.message)
+      });
+    }
     res.status(500).json({ error: 'Failed to update product' });
   }
 });
@@ -188,24 +154,31 @@ router.delete('/:id', async (req, res) => {
     const { id } = req.params;
 
     // Check if product exists
-    const existingProduct = await getRow('SELECT * FROM products WHERE id = ?', [id]);
-    if (!existingProduct) {
+    const product = await Product.findById(id);
+    if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
     // Check if product is used in any sales
-    const salesCount = await getRow('SELECT COUNT(*) as count FROM sale_items WHERE product_id = ?', [id]);
-    if (salesCount.count > 0) {
+    const salesCount = await Sale.countDocuments({
+      'products.productId': id,
+      status: { $ne: 'voided' }
+    });
+
+    if (salesCount > 0) {
       return res.status(400).json({ 
         error: 'Cannot delete product that has been sold. Consider setting quantity to 0 instead.' 
       });
     }
 
-    await runQuery('DELETE FROM products WHERE id = ?', [id]);
+    await Product.findByIdAndDelete(id);
     
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid product ID' });
+    }
     res.status(500).json({ error: 'Failed to delete product' });
   }
 });
@@ -213,12 +186,35 @@ router.delete('/:id', async (req, res) => {
 // GET /api/products/categories/list - Get all categories
 router.get('/categories/list', async (req, res) => {
   try {
-    const categories = await getAllRows('SELECT DISTINCT category FROM products ORDER BY category');
-    const categoryList = categories.map(row => row.category);
-    res.json(categoryList);
+    const categories = await Product.distinct('category');
+    res.json(categories.sort());
   } catch (error) {
     console.error('Error fetching categories:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+// GET /api/products/low-stock - Get low stock products
+router.get('/low-stock', async (req, res) => {
+  try {
+    const { threshold = 5 } = req.query;
+    const lowStockProducts = await Product.getLowStock(parseInt(threshold));
+    res.json(lowStockProducts);
+  } catch (error) {
+    console.error('Error fetching low stock products:', error);
+    res.status(500).json({ error: 'Failed to fetch low stock products' });
+  }
+});
+
+// GET /api/products/search/:term - Search products
+router.get('/search/:term', async (req, res) => {
+  try {
+    const { term } = req.params;
+    const products = await Product.search(term);
+    res.json(products);
+  } catch (error) {
+    console.error('Error searching products:', error);
+    res.status(500).json({ error: 'Failed to search products' });
   }
 });
 

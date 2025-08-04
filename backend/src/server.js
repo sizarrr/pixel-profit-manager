@@ -11,8 +11,8 @@ import productRoutes from './routes/products.js';
 import salesRoutes from './routes/sales.js';
 import analyticsRoutes from './routes/analytics.js';
 
-// Database initialization
-import { initializeDatabase } from './database/init.js';
+// Database connection
+import { connectDatabase } from './database/connection.js';
 
 dotenv.config();
 
@@ -60,11 +60,11 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Initialize database and start server
+// Connect to database and start server
 const startServer = async () => {
   try {
-    await initializeDatabase();
-    console.log('Database initialized successfully');
+    await connectDatabase();
+    console.log('Database connected successfully');
     
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
