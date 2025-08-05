@@ -67,8 +67,7 @@ const saleSchema = new mongoose.Schema({
   },
   receiptNumber: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   }
 }, {
   timestamps: true,

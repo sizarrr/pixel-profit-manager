@@ -143,9 +143,7 @@ const generateSampleSales = (products) => {
       products: saleProducts,
       totalAmount,
       cashierName: cashiers[Math.floor(Math.random() * cashiers.length)],
-      paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)],
-      createdAt: saleDate,
-      updatedAt: saleDate
+      paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)]
     });
   }
   
@@ -165,9 +163,16 @@ const seedDatabase = async () => {
     const createdProducts = await Product.insertMany(sampleProducts);
     console.log(`✅ Created ${createdProducts.length} products`);
     
-    // Generate and insert sales
+    // Generate and insert sales one by one to trigger pre-save middleware
     const sampleSales = generateSampleSales(createdProducts);
-    const createdSales = await Sale.insertMany(sampleSales);
+    const createdSales = [];
+    
+    for (const saleData of sampleSales) {
+      const sale = new Sale(saleData);
+      const savedSale = await sale.save();
+      createdSales.push(savedSale);
+    }
+    
     console.log(`✅ Created ${createdSales.length} sales`);
     
     console.log('🎉 Database seeding completed successfully!');

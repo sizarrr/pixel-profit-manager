@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiService, Product as ApiProduct, Sale as ApiSale } from '../lib/api';
 
 export interface Product {
   id: string;
@@ -10,6 +11,8 @@ export interface Product {
   quantity: number;
   description: string;
   image?: string;
+  lowStockThreshold: number;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,21 +28,52 @@ export interface Sale {
   }[];
   totalAmount: number;
   cashierName: string;
+  paymentMethod: string;
+  receiptNumber: string;
   date: Date;
+}
+
+interface DashboardData {
+  totalProducts: number;
+  totalSales: number;
+  totalRevenue: number;
+  totalProfit: number;
+  lowStockProducts: number;
+  recentSales: Sale[];
+  topProducts: Array<{
+    _id: string;
+    name: string;
+    totalSold: number;
+    revenue: number;
+  }>;
+  salesByCategory: Array<{
+    _id: string;
+    totalSales: number;
+    totalRevenue: number;
+  }>;
+  monthlySales: Array<{
+    month: string;
+    sales: number;
+    revenue: number;
+  }>;
 }
 
 interface StoreContextType {
   products: Product[];
   sales: Sale[];
-  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateProduct: (id: string, product: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  addSale: (sale: Omit<Sale, 'id' | 'date'>) => void;
+  dashboardData: DashboardData | null;
+  loading: boolean;
+  error: string | null;
+  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>) => Promise<void>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addSale: (sale: Omit<Sale, 'id' | 'date' | 'receiptNumber'>) => Promise<void>;
   getLowStockProducts: () => Product[];
   getTodaysSales: () => number;
   getMonthlyStats: () => { sales: number; profit: number };
   getCategoryDistribution: () => { name: string; value: number; count: number }[];
   getMonthlySalesData: () => { month: string; sales: number; profit: number }[];
+  refreshData: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -52,121 +86,196 @@ export const useStore = () => {
   return context;
 };
 
-// Mock data for demonstration
-const mockProducts: Product[] = [
-  {
-    id: '1',
-    name: 'Gaming Laptop RTX 4060',
-    category: 'Laptops',
-    buyPrice: 800,
-    sellPrice: 1200,
-    quantity: 15,
-    description: 'High-performance gaming laptop with RTX 4060',
-    createdAt: new Date('2024-01-15'),
-    updatedAt: new Date('2024-01-15')
-  },
-  {
-    id: '2',
-    name: 'Wireless Gaming Mouse',
-    category: 'Accessories',
-    buyPrice: 25,
-    sellPrice: 45,
-    quantity: 3,
-    description: 'Ergonomic wireless gaming mouse',
-    createdAt: new Date('2024-01-10'),
-    updatedAt: new Date('2024-01-10')
-  },
-  {
-    id: '3',
-    name: 'Mechanical Keyboard RGB',
-    category: 'Accessories',
-    buyPrice: 60,
-    sellPrice: 95,
-    quantity: 8,
-    description: 'RGB mechanical keyboard with Cherry MX switches',
-    createdAt: new Date('2024-01-12'),
-    updatedAt: new Date('2024-01-12')
-  },
-  {
-    id: '4',
-    name: '27" 4K Monitor',
-    category: 'Monitors',
-    buyPrice: 300,
-    sellPrice: 450,
-    quantity: 12,
-    description: '27-inch 4K UHD monitor with HDR support',
-    createdAt: new Date('2024-01-08'),
-    updatedAt: new Date('2024-01-08')
-  }
-];
+// Helper function to convert API product to local product format
+const convertApiProduct = (apiProduct: ApiProduct): Product => ({
+  id: apiProduct._id,
+  name: apiProduct.name,
+  category: apiProduct.category,
+  buyPrice: apiProduct.buyPrice,
+  sellPrice: apiProduct.sellPrice,
+  quantity: apiProduct.quantity,
+  description: apiProduct.description || '',
+  lowStockThreshold: apiProduct.lowStockThreshold,
+  isActive: apiProduct.isActive,
+  createdAt: new Date(apiProduct.createdAt),
+  updatedAt: new Date(apiProduct.updatedAt)
+});
 
-const mockSales: Sale[] = [
-  {
-    id: '1',
-    products: [
-      { productId: '1', productName: 'Gaming Laptop RTX 4060', quantity: 1, sellPrice: 1200, total: 1200 }
-    ],
-    totalAmount: 1200,
-    cashierName: 'Store Cashier',
-    date: new Date()
-  },
-  {
-    id: '2',
-    products: [
-      { productId: '2', productName: 'Wireless Gaming Mouse', quantity: 2, sellPrice: 45, total: 90 },
-      { productId: '3', productName: 'Mechanical Keyboard RGB', quantity: 1, sellPrice: 95, total: 95 }
-    ],
-    totalAmount: 185,
-    cashierName: 'Store Cashier',
-    date: new Date(Date.now() - 24 * 60 * 60 * 1000) // Yesterday
-  }
-];
+// Helper function to convert API sale to local sale format
+const convertApiSale = (apiSale: ApiSale): Sale => ({
+  id: apiSale._id,
+  products: apiSale.products,
+  totalAmount: apiSale.totalAmount,
+  cashierName: apiSale.cashierName,
+  paymentMethod: apiSale.paymentMethod,
+  receiptNumber: apiSale.receiptNumber,
+  date: new Date(apiSale.createdAt)
+});
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
-  const [sales, setSales] = useState<Sale[]>(mockSales);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const addProduct = (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newProduct: Product = {
-      ...productData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    setProducts(prev => [...prev, newProduct]);
-  };
-
-  const updateProduct = (id: string, productData: Partial<Product>) => {
-    setProducts(prev => prev.map(product => 
-      product.id === id 
-        ? { ...product, ...productData, updatedAt: new Date() }
-        : product
-    ));
-  };
-
-  const deleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(product => product.id !== id));
-  };
-
-  const addSale = (saleData: Omit<Sale, 'id' | 'date'>) => {
-    const newSale: Sale = {
-      ...saleData,
-      id: Date.now().toString(),
-      date: new Date()
-    };
+  // Load initial data
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
     
-    // Update product quantities
-    saleData.products.forEach(saleProduct => {
-      updateProduct(saleProduct.productId, {
-        quantity: products.find(p => p.id === saleProduct.productId)!.quantity - saleProduct.quantity
+    try {
+      // Load products, sales, and dashboard data in parallel
+      const [productsResponse, salesResponse, dashboardResponse] = await Promise.all([
+        apiService.getProducts(),
+        apiService.getSales(),
+        apiService.getDashboardOverview()
+      ]);
+
+      if (productsResponse.success) {
+        setProducts(productsResponse.data.products.map(convertApiProduct));
+      }
+
+      if (salesResponse.success) {
+        setSales(salesResponse.data.sales.map(convertApiSale));
+      }
+
+      if (dashboardResponse.success) {
+        const data = dashboardResponse.data;
+        setDashboardData({
+          ...data,
+          recentSales: data.recentSales.map(convertApiSale)
+        });
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+      setError('Failed to load data from server');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await apiService.createProduct({
+        name: productData.name,
+        category: productData.category,
+        buyPrice: productData.buyPrice,
+        sellPrice: productData.sellPrice,
+        quantity: productData.quantity,
+        description: productData.description,
+        lowStockThreshold: productData.lowStockThreshold || 5,
+        isActive: true
       });
-    });
-    
-    setSales(prev => [newSale, ...prev]);
+
+      if (response.success) {
+        const newProduct = convertApiProduct(response.data);
+        setProducts(prev => [...prev, newProduct]);
+      }
+    } catch (err) {
+      console.error('Error adding product:', err);
+      setError('Failed to add product');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const updateProduct = async (id: string, productData: Partial<Product>) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await apiService.updateProduct(id, {
+        name: productData.name,
+        category: productData.category,
+        buyPrice: productData.buyPrice,
+        sellPrice: productData.sellPrice,
+        quantity: productData.quantity,
+        description: productData.description,
+        lowStockThreshold: productData.lowStockThreshold,
+        isActive: productData.isActive
+      });
+
+      if (response.success) {
+        const updatedProduct = convertApiProduct(response.data);
+        setProducts(prev => prev.map(product => 
+          product.id === id ? updatedProduct : product
+        ));
+      }
+    } catch (err) {
+      console.error('Error updating product:', err);
+      setError('Failed to update product');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await apiService.deleteProduct(id);
+
+      if (response.success) {
+        setProducts(prev => prev.filter(product => product.id !== id));
+      }
+    } catch (err) {
+      console.error('Error deleting product:', err);
+      setError('Failed to delete product');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addSale = async (saleData: Omit<Sale, 'id' | 'date' | 'receiptNumber'>) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await apiService.createSale({
+        products: saleData.products,
+        totalAmount: saleData.totalAmount,
+        cashierName: saleData.cashierName,
+        paymentMethod: saleData.paymentMethod || 'cash'
+      });
+
+      if (response.success) {
+        const newSale = convertApiSale(response.data);
+        setSales(prev => [newSale, ...prev]);
+        
+        // Refresh products to get updated quantities
+        const productsResponse = await apiService.getProducts();
+        if (productsResponse.success) {
+          setProducts(productsResponse.data.products.map(convertApiProduct));
+        }
+      }
+    } catch (err) {
+      console.error('Error adding sale:', err);
+      setError('Failed to process sale');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshData = async () => {
+    await loadData();
+  };
+
+  // These methods work with local data for performance
   const getLowStockProducts = () => {
-    return products.filter(product => product.quantity <= 5);
+    return products.filter(product => product.quantity <= (product.lowStockThreshold || 5));
   };
 
   const getTodaysSales = () => {
@@ -220,6 +329,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const getMonthlySalesData = () => {
+    if (dashboardData?.monthlySales) {
+      return dashboardData.monthlySales;
+    }
+
+    // Fallback to local calculation
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const currentMonth = new Date().getMonth();
     
@@ -245,6 +359,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <StoreContext.Provider value={{
       products,
       sales,
+      dashboardData,
+      loading,
+      error,
       addProduct,
       updateProduct,
       deleteProduct,
@@ -253,7 +370,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       getTodaysSales,
       getMonthlyStats,
       getCategoryDistribution,
-      getMonthlySalesData
+      getMonthlySalesData,
+      refreshData
     }}>
       {children}
     </StoreContext.Provider>
