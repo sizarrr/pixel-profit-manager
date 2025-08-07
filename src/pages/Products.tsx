@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Plus, 
   Search, 
@@ -13,10 +14,12 @@ import {
   Trash2, 
   Package, 
   AlertTriangle,
-  DollarSign
+  DollarSign,
+  Settings
 } from 'lucide-react';
 import AddProductDialog from '@/components/products/AddProductDialog';
 import EditProductDialog from '@/components/products/EditProductDialog';
+import BulkOperationsDialog from '@/components/products/BulkOperationsDialog';
 
 const Products = () => {
   const { products, deleteProduct, getLowStockProducts } = useStore();
@@ -25,6 +28,8 @@ const Products = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
   
   const lowStockProducts = getLowStockProducts();
   const categories = Array.from(new Set(products.map(p => p.category)));
@@ -42,6 +47,26 @@ const Products = () => {
     }
   };
 
+  const handleSelectProduct = (productId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedProducts(prev => [...prev, productId]);
+    } else {
+      setSelectedProducts(prev => prev.filter(id => id !== productId));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedProducts(filteredProducts.map(p => p.id));
+    } else {
+      setSelectedProducts([]);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedProducts([]);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -50,10 +75,22 @@ const Products = () => {
           <h1 className="text-3xl font-bold text-gray-900">{t('products')}</h1>
           <p className="text-gray-600">{t('manage_inventory')}</p>
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          {t('add_product')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedProducts.length > 0 && (
+            <Button 
+              variant="outline" 
+              onClick={() => setIsBulkDialogOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Bulk Actions ({selectedProducts.length})
+            </Button>
+          )}
+          <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            {t('add_product')}
+          </Button>
+        </div>
       </div>
 
       {/* Low Stock Alert */}
@@ -109,18 +146,54 @@ const Products = () => {
         </CardContent>
       </Card>
 
+      {/* Bulk Selection Header */}
+      {filteredProducts.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={selectedProducts.length === filteredProducts.length && filteredProducts.length > 0}
+                  onCheckedChange={handleSelectAll}
+                />
+                <span className="text-sm font-medium">
+                  Select All Products ({filteredProducts.length})
+                </span>
+                {selectedProducts.length > 0 && (
+                  <span className="text-sm text-gray-600">
+                    - {selectedProducts.length} selected
+                  </span>
+                )}
+              </div>
+              {selectedProducts.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearSelection}>
+                  Clear Selection
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Products Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredProducts.map(product => (
-          <Card key={product.id} className="hover:shadow-lg transition-shadow">
+          <Card key={product.id} className={`hover:shadow-lg transition-shadow ${
+            selectedProducts.includes(product.id) ? 'ring-2 ring-blue-500' : ''
+          }`}>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
-                    {product.name}
-                  </CardTitle>
-                  <Badge variant="secondary" className="mt-1">
-                    {product.category}
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={selectedProducts.includes(product.id)}
+                    onCheckedChange={(checked) => handleSelectProduct(product.id, checked as boolean)}
+                  />
+                  <div className="flex-1">
+                    <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
+                      {product.name}
+                    </CardTitle>
+                    <Badge variant="secondary" className="mt-1">
+                      {product.category}
                   </Badge>
                 </div>
                 <div className="flex gap-1 ml-2">
@@ -225,6 +298,12 @@ const Products = () => {
           onClose={() => setEditingProduct(null)}
         />
       )}
+      <BulkOperationsDialog
+        isOpen={isBulkDialogOpen}
+        onClose={() => setIsBulkDialogOpen(false)}
+        selectedProducts={selectedProducts}
+        onClearSelection={clearSelection}
+      />
     </div>
   );
 };
