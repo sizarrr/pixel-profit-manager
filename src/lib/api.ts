@@ -1,11 +1,11 @@
-import axios from 'axios';
+import axios from "axios";
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: "/api/v1",
   timeout: 10000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
@@ -20,13 +20,38 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor for error handling
+// Response interceptor to transform backend response format
 api.interceptors.response.use(
   (response) => {
+    // Transform backend response to match frontend expectations
+    if (response.data && response.data.status === "success") {
+      return {
+        ...response,
+        data: {
+          success: true,
+          data:
+            response.data.data?.product ||
+            response.data.data?.products ||
+            response.data.data,
+          message: response.data.message,
+        },
+      };
+    }
     return response;
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error("API Error:", error.response?.data || error.message);
+
+    // Transform error response
+    if (error.response?.data) {
+      const errorData = error.response.data;
+      error.response.data = {
+        success: false,
+        message: errorData.message || "An error occurred",
+        error: errorData.error,
+      };
+    }
+
     return Promise.reject(error);
   }
 );
@@ -97,40 +122,103 @@ export const apiService = {
     category?: string;
     search?: string;
     sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
+    sortOrder?: "asc" | "desc";
   }) {
-    const response = await api.get('/products', { params });
-    return response.data;
+    try {
+      const response = await api.get("/products", { params });
+      console.log("✅ Products fetched:", response.data);
+
+      // Handle the nested products array from backend
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: {
+            products: Array.isArray(response.data.data)
+              ? response.data.data
+              : response.data.data.products || [],
+          },
+        };
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching products:", error);
+      throw error;
+    }
   },
 
   async getProduct(id: string) {
-    const response = await api.get(`/products/${id}`);
-    return response.data;
+    try {
+      const response = await api.get(`/products/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching product:", error);
+      throw error;
+    }
   },
 
-  async createProduct(product: Omit<Product, '_id' | 'createdAt' | 'updatedAt'>) {
-    const response = await api.post('/products', product);
-    return response.data;
+  async createProduct(
+    product: Omit<Product, "_id" | "createdAt" | "updatedAt">
+  ) {
+    try {
+      console.log("🚀 Creating product:", product);
+      const response = await api.post("/products", product);
+      console.log("✅ Product created, raw response:", response.data);
+
+      // The response interceptor should have already transformed this
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error creating product:", error);
+      console.error("Error details:", {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+      throw error;
+    }
   },
 
   async updateProduct(id: string, product: Partial<Product>) {
-    const response = await api.put(`/products/${id}`, product);
-    return response.data;
+    try {
+      const response = await api.put(`/products/${id}`, product);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error updating product:", error);
+      throw error;
+    }
   },
 
   async deleteProduct(id: string) {
-    const response = await api.delete(`/products/${id}`);
-    return response.data;
+    try {
+      const response = await api.delete(`/products/${id}`);
+      return {
+        success: true,
+        message: "Product deleted successfully",
+      };
+    } catch (error) {
+      console.error("❌ Error deleting product:", error);
+      throw error;
+    }
   },
 
   async getLowStockProducts() {
-    const response = await api.get('/products/low-stock');
-    return response.data;
+    try {
+      const response = await api.get("/products/low-stock");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching low stock products:", error);
+      throw error;
+    }
   },
 
   async getProductCategories() {
-    const response = await api.get('/products/categories');
-    return response.data;
+    try {
+      const response = await api.get("/products/categories");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching categories:", error);
+      throw error;
+    }
   },
 
   // Sales
@@ -141,13 +229,36 @@ export const apiService = {
     endDate?: string;
     cashierName?: string;
   }) {
-    const response = await api.get('/sales', { params });
-    return response.data;
+    try {
+      const response = await api.get("/sales", { params });
+
+      // Handle the nested sales array from backend
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: {
+            sales: Array.isArray(response.data.data)
+              ? response.data.data
+              : response.data.data.sales || [],
+          },
+        };
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching sales:", error);
+      throw error;
+    }
   },
 
   async getSale(id: string) {
-    const response = await api.get(`/sales/${id}`);
-    return response.data;
+    try {
+      const response = await api.get(`/sales/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching sale:", error);
+      throw error;
+    }
   },
 
   async createSale(sale: {
@@ -162,40 +273,110 @@ export const apiService = {
     cashierName: string;
     paymentMethod?: string;
   }) {
-    const response = await api.post('/sales', sale);
-    return response.data;
+    try {
+      const response = await api.post("/sales", sale);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error creating sale:", error);
+      throw error;
+    }
   },
 
   async getSalesStats() {
-    const response = await api.get('/sales/stats');
-    return response.data;
+    try {
+      const response = await api.get("/sales/stats");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching sales stats:", error);
+      throw error;
+    }
   },
 
   async getTopProducts() {
-    const response = await api.get('/sales/top-products');
-    return response.data;
+    try {
+      const response = await api.get("/sales/top-products");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching top products:", error);
+      throw error;
+    }
   },
 
   // Dashboard
   async getDashboardOverview() {
-    const response = await api.get('/dashboard/overview');
-    return response.data;
+    try {
+      const response = await api.get("/dashboard/overview");
+
+      // Transform dashboard response
+      if (response.data && response.data.status === "success") {
+        const data = response.data.data;
+        return {
+          success: true,
+          data: {
+            totalProducts: data.products?.totalProducts || 0,
+            totalSales: data.sales?.period?.totalSales || 0,
+            totalRevenue: data.sales?.period?.totalRevenue || 0,
+            totalProfit: data.profit?.totalProfit || 0,
+            lowStockProducts: data.products?.lowStockCount || 0,
+            recentSales: data.recentSales || [],
+            topProducts: data.topProducts || [],
+            salesByCategory: data.categoryDistribution || [],
+            monthlySales: data.monthlySalesData || [],
+          },
+        };
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching dashboard overview:", error);
+      // Return empty data instead of throwing
+      return {
+        success: true,
+        data: {
+          totalProducts: 0,
+          totalSales: 0,
+          totalRevenue: 0,
+          totalProfit: 0,
+          lowStockProducts: 0,
+          recentSales: [],
+          topProducts: [],
+          salesByCategory: [],
+          monthlySales: [],
+        },
+      };
+    }
   },
 
   async getDashboardAnalytics() {
-    const response = await api.get('/dashboard/analytics');
-    return response.data;
+    try {
+      const response = await api.get("/dashboard/analytics");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching dashboard analytics:", error);
+      throw error;
+    }
   },
 
   async getInventoryInsights() {
-    const response = await api.get('/dashboard/inventory-insights');
-    return response.data;
+    try {
+      const response = await api.get("/dashboard/inventory-insights");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching inventory insights:", error);
+      throw error;
+    }
   },
 
   // Health check
   async healthCheck() {
-    const response = await api.get('/health');
-    return response.data;
+    try {
+      const response = await api.get("/health");
+      console.log("✅ Health check passed:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Health check failed:", error);
+      throw error;
+    }
   },
 };
 

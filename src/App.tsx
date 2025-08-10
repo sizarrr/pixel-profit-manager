@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +11,8 @@ import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Sales from "@/pages/Sales";
 import NotFound from "./pages/NotFound";
+
+// Add to your routes
 
 const queryClient = new QueryClient();
 
@@ -27,7 +28,14 @@ const AppLayout = () => {
               <Route path="/" element={<Dashboard />} />
               <Route path="/products" element={<Products />} />
               <Route path="/sales" element={<Sales />} />
-              <Route path="/reports" element={<div className="text-center py-20">Reports page coming soon...</div>} />
+              <Route
+                path="/reports"
+                element={
+                  <div className="text-center py-20">
+                    Reports page coming soon...
+                  </div>
+                }
+              />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </div>

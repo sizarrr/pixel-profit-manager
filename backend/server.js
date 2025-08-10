@@ -14,7 +14,7 @@ import errorHandler, { notFound } from "./middleware/errorHandler.js";
 const app = express();
 
 // Connect to MongoDB
-await connectDB();
+connectDB();
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set("trust proxy", 1);

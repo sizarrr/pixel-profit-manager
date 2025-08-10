@@ -1,63 +1,64 @@
-
-import React, { useState } from 'react';
-import { useStore } from '@/contexts/StoreContext';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Package, 
+import React, { useState } from "react";
+import { useStore } from "@/contexts/StoreContext";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Package,
   AlertTriangle,
   DollarSign,
-  Settings
-} from 'lucide-react';
-import AddProductDialog from '@/components/products/AddProductDialog';
-import EditProductDialog from '@/components/products/EditProductDialog';
-import BulkOperationsDialog from '@/components/products/BulkOperationsDialog';
+  Settings,
+} from "lucide-react";
+import AddProductDialog from "@/components/products/AddProductDialog";
+import EditProductDialog from "@/components/products/EditProductDialog";
+import BulkOperationsDialog from "@/components/products/BulkOperationsDialog";
 
 const Products = () => {
   const { products, deleteProduct, getLowStockProducts } = useStore();
   const { t } = useLanguage();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
-  
+
   const lowStockProducts = getLowStockProducts();
-  const categories = Array.from(new Set(products.map(p => p.category)));
-  
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.category.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
+  const categories = Array.from(new Set(products.map((p) => p.category)));
+
+  const filteredProducts = products.filter((product) => {
+    const matchesSearch =
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory =
+      categoryFilter === "all" || product.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
   const handleDeleteProduct = (id: string) => {
-    if (window.confirm(t('delete_product_confirm'))) {
+    if (window.confirm(t("delete_product_confirm"))) {
       deleteProduct(id);
     }
   };
 
   const handleSelectProduct = (productId: string, checked: boolean) => {
     if (checked) {
-      setSelectedProducts(prev => [...prev, productId]);
+      setSelectedProducts((prev) => [...prev, productId]);
     } else {
-      setSelectedProducts(prev => prev.filter(id => id !== productId));
+      setSelectedProducts((prev) => prev.filter((id) => id !== productId));
     }
   };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedProducts(filteredProducts.map(p => p.id));
+      setSelectedProducts(filteredProducts.map((p) => p.id));
     } else {
       setSelectedProducts([]);
     }
@@ -72,13 +73,13 @@ const Products = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('products')}</h1>
-          <p className="text-gray-600">{t('manage_inventory')}</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t("products")}</h1>
+          <p className="text-gray-600">{t("manage_inventory")}</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedProducts.length > 0 && (
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsBulkDialogOpen(true)}
               className="flex items-center gap-2"
             >
@@ -86,9 +87,12 @@ const Products = () => {
               Bulk Actions ({selectedProducts.length})
             </Button>
           )}
-          <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+          <Button
+            onClick={() => setIsAddDialogOpen(true)}
+            className="flex items-center gap-2"
+          >
             <Plus className="w-4 h-4" />
-            {t('add_product')}
+            {t("add_product")}
           </Button>
         </div>
       </div>
@@ -99,16 +103,20 @@ const Products = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-orange-800">
               <AlertTriangle className="w-5 h-5" />
-              {t('low_stock_alert')}
+              {t("low_stock_alert")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-orange-700 mb-3">
-              {lowStockProducts.length} {t('items_low_stock')}:
+              {lowStockProducts.length} {t("items_low_stock")}:
             </p>
             <div className="flex flex-wrap gap-2">
-              {lowStockProducts.map(product => (
-                <Badge key={product.id} variant="outline" className="text-orange-700 border-orange-300">
+              {lowStockProducts.map((product) => (
+                <Badge
+                  key={product.id}
+                  variant="outline"
+                  className="text-orange-700 border-orange-300"
+                >
                   {product.name} ({product.quantity} left)
                 </Badge>
               ))}
@@ -125,7 +133,9 @@ const Products = () => {
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder={`${t('search')} ${t('products').toLowerCase()}...`}
+                  placeholder={`${t("search")} ${t(
+                    "products"
+                  ).toLowerCase()}...`}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -137,9 +147,11 @@ const Products = () => {
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">{t('all_categories')}</option>
-              {categories.map(category => (
-                <option key={category} value={category}>{category}</option>
+              <option value="all">{t("all_categories")}</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
               ))}
             </select>
           </div>
@@ -153,7 +165,10 @@ const Products = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Checkbox
-                  checked={selectedProducts.length === filteredProducts.length && filteredProducts.length > 0}
+                  checked={
+                    selectedProducts.length === filteredProducts.length &&
+                    filteredProducts.length > 0
+                  }
                   onCheckedChange={handleSelectAll}
                 />
                 <span className="text-sm font-medium">
@@ -177,16 +192,23 @@ const Products = () => {
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredProducts.map(product => (
-          <Card key={product.id} className={`hover:shadow-lg transition-shadow ${
-            selectedProducts.includes(product.id) ? 'ring-2 ring-blue-500' : ''
-          }`}>
+        {filteredProducts.map((product) => (
+          <Card
+            key={product.id}
+            className={`hover:shadow-lg transition-shadow ${
+              selectedProducts.includes(product.id)
+                ? "ring-2 ring-blue-500"
+                : ""
+            }`}
+          >
             <CardHeader className="pb-3">
               <div className="flex justify-between items-start">
                 <div className="flex items-start gap-3">
                   <Checkbox
                     checked={selectedProducts.includes(product.id)}
-                    onCheckedChange={(checked) => handleSelectProduct(product.id, checked as boolean)}
+                    onCheckedChange={(checked) =>
+                      handleSelectProduct(product.id, checked as boolean)
+                    }
                   />
                   <div className="flex-1">
                     <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
@@ -194,25 +216,26 @@ const Products = () => {
                     </CardTitle>
                     <Badge variant="secondary" className="mt-1">
                       {product.category}
-                  </Badge>
-                </div>
-                <div className="flex gap-1 ml-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditingProduct(product)}
-                    className="p-1 h-8 w-8"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteProduct(product.id)}
-                    className="p-1 h-8 w-8 text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                    </Badge>
+                  </div>
+                  <div className="flex gap-1 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingProduct(product)}
+                      className="p-1 h-8 w-8"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteProduct(product.id)}
+                      className="p-1 h-8 w-8 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -221,31 +244,36 @@ const Products = () => {
                 <p className="text-sm text-gray-600 line-clamp-2">
                   {product.description}
                 </p>
-                
+
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-1">
                     <Package className="w-4 h-4 text-gray-500" />
-                    <span className={`text-sm font-medium ${
-                      product.quantity <= 5 ? 'text-red-600' : 'text-gray-700'
-                    }`}>
-                      {product.quantity} {t('in_stock')}
+                    <span
+                      className={`text-sm font-medium ${
+                        product.quantity <= 5 ? "text-red-600" : "text-gray-700"
+                      }`}
+                    >
+                      {product.quantity} {t("in_stock")}
                     </span>
                   </div>
                   {product.quantity <= 5 && (
-                    <Badge variant="outline" className="text-red-600 border-red-300">
-                      {t('low_stock')}
+                    <Badge
+                      variant="outline"
+                      className="text-red-600 border-red-300"
+                    >
+                      {t("low_stock")}
                     </Badge>
                   )}
                 </div>
-                
+
                 <div className="pt-2 border-t">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-xs text-gray-500">{t('buy_price')}</p>
+                      <p className="text-xs text-gray-500">{t("buy_price")}</p>
                       <p className="font-medium">${product.buyPrice}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-gray-500">{t('sell_price')}</p>
+                      <p className="text-xs text-gray-500">{t("sell_price")}</p>
                       <p className="font-bold text-green-600 flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
                         {product.sellPrice}
@@ -253,7 +281,9 @@ const Products = () => {
                     </div>
                   </div>
                   <div className="mt-2 text-center">
-                    <p className="text-xs text-gray-500">{t('profit_per_unit')}</p>
+                    <p className="text-xs text-gray-500">
+                      {t("profit_per_unit")}
+                    </p>
                     <p className="text-sm font-medium text-blue-600">
                       ${(product.sellPrice - product.buyPrice).toFixed(2)}
                     </p>
@@ -269,17 +299,21 @@ const Products = () => {
         <Card>
           <CardContent className="text-center py-12">
             <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">{t('no_products_found')}</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {t("no_products_found")}
+            </h3>
             <p className="text-gray-500 mb-4">
-              {searchTerm || categoryFilter !== 'all' 
-                ? t('adjust_search')
-                : t('add_first_product')
-              }
+              {searchTerm || categoryFilter !== "all"
+                ? t("adjust_search")
+                : t("add_first_product")}
             </p>
-            {!searchTerm && categoryFilter === 'all' && (
-              <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+            {!searchTerm && categoryFilter === "all" && (
+              <Button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="flex items-center gap-2"
+              >
                 <Plus className="w-4 h-4" />
-                {t('add_product')}
+                {t("add_product")}
               </Button>
             )}
           </CardContent>
@@ -287,12 +321,12 @@ const Products = () => {
       )}
 
       {/* Dialogs */}
-      <AddProductDialog 
-        isOpen={isAddDialogOpen} 
-        onClose={() => setIsAddDialogOpen(false)} 
+      <AddProductDialog
+        isOpen={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
       />
       {editingProduct && (
-        <EditProductDialog 
+        <EditProductDialog
           product={editingProduct}
           isOpen={!!editingProduct}
           onClose={() => setEditingProduct(null)}

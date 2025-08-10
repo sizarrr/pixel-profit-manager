@@ -1,6 +1,5 @@
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiService, Product as ApiProduct, Sale as ApiSale } from '../lib/api';
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { apiService, Product as ApiProduct, Sale as ApiSale } from "../lib/api";
 
 export interface Product {
   id: string;
@@ -64,14 +63,20 @@ interface StoreContextType {
   dashboardData: DashboardData | null;
   loading: boolean;
   error: string | null;
-  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>) => Promise<void>;
+  addProduct: (
+    product: Omit<Product, "id" | "createdAt" | "updatedAt" | "isActive">
+  ) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
-  addSale: (sale: Omit<Sale, 'id' | 'date' | 'receiptNumber'>) => Promise<void>;
+  addSale: (sale: Omit<Sale, "id" | "date" | "receiptNumber">) => Promise<void>;
   getLowStockProducts: () => Product[];
   getTodaysSales: () => number;
   getMonthlyStats: () => { sales: number; profit: number };
-  getCategoryDistribution: () => { name: string; value: number; count: number }[];
+  getCategoryDistribution: () => {
+    name: string;
+    value: number;
+    count: number;
+  }[];
   getMonthlySalesData: () => { month: string; sales: number; profit: number }[];
   refreshData: () => Promise<void>;
 }
@@ -81,7 +86,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const useStore = () => {
   const context = useContext(StoreContext);
   if (context === undefined) {
-    throw new Error('useStore must be used within a StoreProvider');
+    throw new Error("useStore must be used within a StoreProvider");
   }
   return context;
 };
@@ -94,11 +99,11 @@ const convertApiProduct = (apiProduct: ApiProduct): Product => ({
   buyPrice: apiProduct.buyPrice,
   sellPrice: apiProduct.sellPrice,
   quantity: apiProduct.quantity,
-  description: apiProduct.description || '',
+  description: apiProduct.description || "",
   lowStockThreshold: apiProduct.lowStockThreshold,
   isActive: apiProduct.isActive,
   createdAt: new Date(apiProduct.createdAt),
-  updatedAt: new Date(apiProduct.updatedAt)
+  updatedAt: new Date(apiProduct.updatedAt),
 });
 
 // Helper function to convert API sale to local sale format
@@ -109,13 +114,17 @@ const convertApiSale = (apiSale: ApiSale): Sale => ({
   cashierName: apiSale.cashierName,
   paymentMethod: apiSale.paymentMethod,
   receiptNumber: apiSale.receiptNumber,
-  date: new Date(apiSale.createdAt)
+  date: new Date(apiSale.createdAt),
 });
 
-export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,14 +132,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // Load products, sales, and dashboard data in parallel
-      const [productsResponse, salesResponse, dashboardResponse] = await Promise.all([
-        apiService.getProducts(),
-        apiService.getSales(),
-        apiService.getDashboardOverview()
-      ]);
+      const [productsResponse, salesResponse, dashboardResponse] =
+        await Promise.all([
+          apiService.getProducts(),
+          apiService.getSales(),
+          apiService.getDashboardOverview(),
+        ]);
 
       if (productsResponse.success) {
         setProducts(productsResponse.data.products.map(convertApiProduct));
@@ -144,12 +154,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const data = dashboardResponse.data;
         setDashboardData({
           ...data,
-          recentSales: data.recentSales.map(convertApiSale)
+          recentSales: data.recentSales.map(convertApiSale),
         });
       }
     } catch (err) {
-      console.error('Error loading data:', err);
-      setError('Failed to load data from server');
+      console.error("Error loading data:", err);
+      setError("Failed to load data from server");
     } finally {
       setLoading(false);
     }
@@ -159,10 +169,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     loadData();
   }, []);
 
-  const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>) => {
+  const addProduct = async (
+    productData: Omit<Product, "id" | "createdAt" | "updatedAt" | "isActive">
+  ) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await apiService.createProduct({
         name: productData.name,
@@ -172,16 +184,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         quantity: productData.quantity,
         description: productData.description,
         lowStockThreshold: productData.lowStockThreshold || 5,
-        isActive: true
+        isActive: true,
       });
 
       if (response.success) {
         const newProduct = convertApiProduct(response.data);
-        setProducts(prev => [...prev, newProduct]);
+        setProducts((prev) => [...prev, newProduct]);
       }
     } catch (err) {
-      console.error('Error adding product:', err);
-      setError('Failed to add product');
+      console.error("Error adding product:", err);
+      setError("Failed to add product");
       throw err;
     } finally {
       setLoading(false);
@@ -191,7 +203,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateProduct = async (id: string, productData: Partial<Product>) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await apiService.updateProduct(id, {
         name: productData.name,
@@ -201,18 +213,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         quantity: productData.quantity,
         description: productData.description,
         lowStockThreshold: productData.lowStockThreshold,
-        isActive: productData.isActive
+        isActive: productData.isActive,
       });
 
       if (response.success) {
         const updatedProduct = convertApiProduct(response.data);
-        setProducts(prev => prev.map(product => 
-          product.id === id ? updatedProduct : product
-        ));
+        setProducts((prev) =>
+          prev.map((product) => (product.id === id ? updatedProduct : product))
+        );
       }
     } catch (err) {
-      console.error('Error updating product:', err);
-      setError('Failed to update product');
+      console.error("Error updating product:", err);
+      setError("Failed to update product");
       throw err;
     } finally {
       setLoading(false);
@@ -222,38 +234,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deleteProduct = async (id: string) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await apiService.deleteProduct(id);
 
       if (response.success) {
-        setProducts(prev => prev.filter(product => product.id !== id));
+        setProducts((prev) => prev.filter((product) => product.id !== id));
       }
     } catch (err) {
-      console.error('Error deleting product:', err);
-      setError('Failed to delete product');
+      console.error("Error deleting product:", err);
+      setError("Failed to delete product");
       throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  const addSale = async (saleData: Omit<Sale, 'id' | 'date' | 'receiptNumber'>) => {
+  const addSale = async (
+    saleData: Omit<Sale, "id" | "date" | "receiptNumber">
+  ) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await apiService.createSale({
         products: saleData.products,
         totalAmount: saleData.totalAmount,
         cashierName: saleData.cashierName,
-        paymentMethod: saleData.paymentMethod || 'cash'
+        paymentMethod: saleData.paymentMethod || "cash",
       });
 
       if (response.success) {
         const newSale = convertApiSale(response.data);
-        setSales(prev => [newSale, ...prev]);
-        
+        setSales((prev) => [newSale, ...prev]);
+
         // Refresh products to get updated quantities
         const productsResponse = await apiService.getProducts();
         if (productsResponse.success) {
@@ -261,8 +275,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
     } catch (err) {
-      console.error('Error adding sale:', err);
-      setError('Failed to process sale');
+      console.error("Error adding sale:", err);
+      setError("Failed to process sale");
       throw err;
     } finally {
       setLoading(false);
@@ -275,15 +289,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // These methods work with local data for performance
   const getLowStockProducts = () => {
-    return products.filter(product => product.quantity <= (product.lowStockThreshold || 5));
+    return products.filter(
+      (product) => product.quantity <= (product.lowStockThreshold || 5)
+    );
   };
 
   const getTodaysSales = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     return sales
-      .filter(sale => sale.date >= today)
+      .filter((sale) => sale.date >= today)
       .reduce((total, sale) => total + sale.totalAmount, 0);
   };
 
@@ -291,88 +307,132 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const thisMonth = new Date();
     thisMonth.setDate(1);
     thisMonth.setHours(0, 0, 0, 0);
-    
-    const monthlySales = sales.filter(sale => sale.date >= thisMonth);
-    const totalSales = monthlySales.reduce((total, sale) => total + sale.totalAmount, 0);
-    
+
+    const monthlySales = sales.filter((sale) => sale.date >= thisMonth);
+    const totalSales = monthlySales.reduce(
+      (total, sale) => total + sale.totalAmount,
+      0
+    );
+
     // Calculate profit
     const totalProfit = monthlySales.reduce((profit, sale) => {
       const saleProfit = sale.products.reduce((sp, product) => {
-        const originalProduct = products.find(p => p.id === product.productId);
+        const originalProduct = products.find(
+          (p) => p.id === product.productId
+        );
         if (originalProduct) {
-          return sp + ((product.sellPrice - originalProduct.buyPrice) * product.quantity);
+          return (
+            sp +
+            (product.sellPrice - originalProduct.buyPrice) * product.quantity
+          );
         }
         return sp;
       }, 0);
       return profit + saleProfit;
     }, 0);
-    
+
     return { sales: totalSales, profit: totalProfit };
   };
 
   const getCategoryDistribution = () => {
     const categoryMap = new Map<string, { value: number; count: number }>();
-    
-    products.forEach(product => {
-      const current = categoryMap.get(product.category) || { value: 0, count: 0 };
+
+    products.forEach((product) => {
+      const current = categoryMap.get(product.category) || {
+        value: 0,
+        count: 0,
+      };
       categoryMap.set(product.category, {
-        value: current.value + (product.sellPrice * product.quantity),
-        count: current.count + product.quantity
+        value: current.value + product.sellPrice * product.quantity,
+        count: current.count + product.quantity,
       });
     });
-    
+
     return Array.from(categoryMap.entries()).map(([name, data]) => ({
       name,
       value: data.value,
-      count: data.count
+      count: data.count,
     }));
   };
 
   const getMonthlySalesData = () => {
     if (dashboardData?.monthlySales) {
-      return dashboardData.monthlySales;
+      // Map dashboardData.monthlySales to ensure 'profit' property exists
+      return dashboardData.monthlySales.map((ms) => ({
+        month: ms.month,
+        sales: ms.sales,
+        profit:
+          typeof (ms as any).profit !== "undefined"
+            ? (ms as any).profit
+            : typeof ms.revenue !== "undefined"
+            ? ms.revenue
+            : 0,
+      }));
     }
 
     // Fallback to local calculation
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     const currentMonth = new Date().getMonth();
-    
+
     return months.slice(0, currentMonth + 1).map((month, index) => {
-      const monthSales = sales.filter(sale => sale.date.getMonth() === index);
-      const totalSales = monthSales.reduce((total, sale) => total + sale.totalAmount, 0);
+      const monthSales = sales.filter((sale) => sale.date.getMonth() === index);
+      const totalSales = monthSales.reduce(
+        (total, sale) => total + sale.totalAmount,
+        0
+      );
       const totalProfit = monthSales.reduce((profit, sale) => {
         const saleProfit = sale.products.reduce((sp, product) => {
-          const originalProduct = products.find(p => p.id === product.productId);
+          const originalProduct = products.find(
+            (p) => p.id === product.productId
+          );
           if (originalProduct) {
-            return sp + ((product.sellPrice - originalProduct.buyPrice) * product.quantity);
+            return (
+              sp +
+              (product.sellPrice - originalProduct.buyPrice) * product.quantity
+            );
           }
           return sp;
         }, 0);
         return profit + saleProfit;
       }, 0);
-      
+
       return { month, sales: totalSales, profit: totalProfit };
     });
   };
 
   return (
-    <StoreContext.Provider value={{
-      products,
-      sales,
-      dashboardData,
-      loading,
-      error,
-      addProduct,
-      updateProduct,
-      deleteProduct,
-      addSale,
-      getLowStockProducts,
-      getTodaysSales,
-      getMonthlyStats,
-      getCategoryDistribution,
-      getMonthlySalesData,
-      refreshData
-    }}>
+    <StoreContext.Provider
+      value={{
+        products,
+        sales,
+        dashboardData,
+        loading,
+        error,
+        addProduct,
+        updateProduct,
+        deleteProduct,
+        addSale,
+        getLowStockProducts,
+        getTodaysSales,
+        getMonthlyStats,
+        getCategoryDistribution,
+        getMonthlySalesData,
+        refreshData,
+      }}
+    >
       {children}
     </StoreContext.Provider>
   );
