@@ -35,15 +35,18 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
   selectedProducts,
   onClearSelection,
 }) => {
-  const { products, deleteProduct, updateProduct } = useStore();
+  const { products, deleteProduct, updateProduct, refreshData } = useStore();
   const { t } = useLanguage();
   const { toast } = useToast();
 
   const [operation, setOperation] = useState<"delete" | "update">("update");
   const [bulkUpdateData, setBulkUpdateData] = useState<BulkUpdateData>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const selectedProductDetails = products.filter((p) =>
+  // Safety check: ensure products is an array
+  const safeProducts = Array.isArray(products) ? products : [];
+  const selectedProductDetails = safeProducts.filter((p) =>
     selectedProducts.includes(p.id)
   );
 
@@ -57,69 +60,170 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
       return;
     }
 
+    setIsProcessing(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
+      // Process deletions with proper error handling
       for (const productId of selectedProducts) {
-        await deleteProduct(productId);
+        try {
+          await deleteProduct(productId);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to delete product ${productId}:`, error);
+          failCount++;
+        }
       }
 
-      toast({
-        title: t("success"),
-        description: `Successfully deleted ${selectedProducts.length} products`,
-      });
+      // Show results
+      if (successCount > 0) {
+        toast({
+          title: t("success"),
+          description: `Successfully deleted ${successCount} product${
+            successCount > 1 ? "s" : ""
+          }${failCount > 0 ? `. ${failCount} failed.` : ""}`,
+        });
+      }
 
+      if (failCount > 0 && successCount === 0) {
+        toast({
+          title: t("error"),
+          description: `Failed to delete ${failCount} product${
+            failCount > 1 ? "s" : ""
+          }`,
+          variant: "destructive",
+        });
+      }
+
+      // Always refresh data and clear selection
+      await refreshData();
       onClearSelection();
       onClose();
     } catch (error) {
       toast({
         title: t("error"),
-        description: "Failed to delete products",
+        description: "An unexpected error occurred during bulk delete",
         variant: "destructive",
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleBulkUpdate = async () => {
+    // Validate that at least one field is being updated
+    const hasUpdates = Object.values(bulkUpdateData).some(
+      (value) => value !== undefined && value !== null && value !== ""
+    );
+
+    if (!hasUpdates) {
+      toast({
+        title: t("error"),
+        description: "Please specify at least one field to update",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
       for (const productId of selectedProducts) {
-        const product = products.find((p) => p.id === productId);
-        if (!product) continue;
+        try {
+          const product = safeProducts.find((p) => p.id === productId);
+          if (!product) {
+            failCount++;
+            continue;
+          }
 
-        const updateData: any = {};
+          const updateData: any = {};
 
-        if (bulkUpdateData.category) {
-          updateData.category = bulkUpdateData.category;
+          if (bulkUpdateData.category?.trim()) {
+            updateData.category = bulkUpdateData.category.trim();
+          }
+
+          if (
+            bulkUpdateData.buyPriceMultiplier &&
+            bulkUpdateData.buyPriceMultiplier > 0
+          ) {
+            updateData.buyPrice =
+              Math.round(
+                product.buyPrice * bulkUpdateData.buyPriceMultiplier * 100
+              ) / 100;
+          }
+
+          if (
+            bulkUpdateData.sellPriceMultiplier &&
+            bulkUpdateData.sellPriceMultiplier > 0
+          ) {
+            updateData.sellPrice =
+              Math.round(
+                product.sellPrice * bulkUpdateData.sellPriceMultiplier * 100
+              ) / 100;
+          }
+
+          if (
+            bulkUpdateData.lowStockThreshold !== undefined &&
+            bulkUpdateData.lowStockThreshold >= 0
+          ) {
+            updateData.lowStockThreshold = bulkUpdateData.lowStockThreshold;
+          }
+
+          // Validate sell price vs buy price
+          const finalBuyPrice = updateData.buyPrice || product.buyPrice;
+          const finalSellPrice = updateData.sellPrice || product.sellPrice;
+
+          if (finalSellPrice < finalBuyPrice) {
+            console.error(
+              `Sell price (${finalSellPrice}) cannot be less than buy price (${finalBuyPrice}) for product ${product.name}`
+            );
+            failCount++;
+            continue;
+          }
+
+          await updateProduct(productId, updateData);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to update product ${productId}:`, error);
+          failCount++;
         }
-
-        if (bulkUpdateData.buyPriceMultiplier) {
-          updateData.buyPrice =
-            product.buyPrice * bulkUpdateData.buyPriceMultiplier;
-        }
-
-        if (bulkUpdateData.sellPriceMultiplier) {
-          updateData.sellPrice =
-            product.sellPrice * bulkUpdateData.sellPriceMultiplier;
-        }
-
-        if (bulkUpdateData.lowStockThreshold) {
-          updateData.lowStockThreshold = bulkUpdateData.lowStockThreshold;
-        }
-
-        await updateProduct(productId, updateData);
       }
 
-      toast({
-        title: t("success"),
-        description: `Successfully updated ${selectedProducts.length} products`,
-      });
+      // Show results
+      if (successCount > 0) {
+        toast({
+          title: t("success"),
+          description: `Successfully updated ${successCount} product${
+            successCount > 1 ? "s" : ""
+          }${failCount > 0 ? `. ${failCount} failed.` : ""}`,
+        });
+      }
 
+      if (failCount > 0 && successCount === 0) {
+        toast({
+          title: t("error"),
+          description: `Failed to update ${failCount} product${
+            failCount > 1 ? "s" : ""
+          }`,
+          variant: "destructive",
+        });
+      }
+
+      // Always refresh data and clear selection
+      await refreshData();
       onClearSelection();
       onClose();
     } catch (error) {
       toast({
         title: t("error"),
-        description: "Failed to update products",
+        description: "An unexpected error occurred during bulk update",
         variant: "destructive",
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -128,7 +232,8 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>
-            Bulk Operations - {selectedProducts.length} Products Selected
+            Bulk Operations - {selectedProducts.length} Product
+            {selectedProducts.length > 1 ? "s" : ""} Selected
           </DialogTitle>
         </DialogHeader>
 
@@ -138,6 +243,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
             <Button
               variant={operation === "update" ? "default" : "outline"}
               onClick={() => setOperation("update")}
+              disabled={isProcessing}
               className="flex items-center gap-2"
             >
               <Edit className="w-4 h-4" />
@@ -146,6 +252,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
             <Button
               variant={operation === "delete" ? "destructive" : "outline"}
               onClick={() => setOperation("delete")}
+              disabled={isProcessing}
               className="flex items-center gap-2"
             >
               <Trash2 className="w-4 h-4" />
@@ -161,11 +268,15 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                 Selected Products ({selectedProducts.length})
               </h4>
               <div className="max-h-32 overflow-y-auto space-y-1">
-                {selectedProductDetails.map((product) => (
-                  <div key={product.id} className="text-sm text-gray-600">
-                    {product.name} - {product.category}
-                  </div>
-                ))}
+                {selectedProductDetails.length > 0 ? (
+                  selectedProductDetails.map((product) => (
+                    <div key={product.id} className="text-sm text-gray-600">
+                      {product.name} - {product.category} (${product.sellPrice})
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-gray-400">No products found</div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -188,6 +299,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                         category: e.target.value,
                       }))
                     }
+                    disabled={isProcessing}
                   />
                 </div>
 
@@ -196,6 +308,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                   <Input
                     id="lowStockThreshold"
                     type="number"
+                    min="0"
                     placeholder="Leave empty to keep current"
                     value={bulkUpdateData.lowStockThreshold || ""}
                     onChange={(e) =>
@@ -206,6 +319,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                           : undefined,
                       }))
                     }
+                    disabled={isProcessing}
                   />
                 </div>
               </div>
@@ -219,6 +333,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                     id="buyPriceMultiplier"
                     type="number"
                     step="0.01"
+                    min="0.01"
                     placeholder="e.g., 1.1 for 10% increase"
                     value={bulkUpdateData.buyPriceMultiplier || ""}
                     onChange={(e) =>
@@ -229,6 +344,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                           : undefined,
                       }))
                     }
+                    disabled={isProcessing}
                   />
                 </div>
 
@@ -240,6 +356,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                     id="sellPriceMultiplier"
                     type="number"
                     step="0.01"
+                    min="0.01"
                     placeholder="e.g., 1.1 for 10% increase"
                     value={bulkUpdateData.sellPriceMultiplier || ""}
                     onChange={(e) =>
@@ -250,8 +367,17 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                           : undefined,
                       }))
                     }
+                    disabled={isProcessing}
                   />
                 </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-blue-800 text-sm">
+                  💡 <strong>Tip:</strong> Price multipliers will be applied to
+                  existing prices. For example, 1.1 increases prices by 10%, 0.9
+                  decreases by 10%.
+                </p>
               </div>
             </div>
           )}
@@ -260,23 +386,28 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <h4 className="font-medium text-red-800 mb-2">
-                  ⚠️ Permanent Delete Warning
+                  ⚠️ Soft Delete Warning
                 </h4>
-                <p className="text-red-700 text-sm">
-                  This will permanently delete {selectedProducts.length}{" "}
-                  products. This action cannot be undone.
+                <p className="text-red-700 text-sm mb-3">
+                  This will mark {selectedProducts.length} product
+                  {selectedProducts.length > 1 ? "s" : ""} as inactive. They
+                  will be hidden from normal views but can be restored later.
                 </p>
 
-                <div className="flex items-center space-x-2 mt-3">
+                <div className="flex items-center space-x-2">
                   <Checkbox
                     id="confirmDelete"
                     checked={confirmDelete}
                     onCheckedChange={(checked) =>
                       setConfirmDelete(checked === true)
                     }
+                    disabled={isProcessing}
                   />
-                  <Label htmlFor="confirmDelete" className="text-red-700">
-                    I understand this action is permanent and cannot be undone
+                  <Label
+                    htmlFor="confirmDelete"
+                    className="text-red-700 text-sm"
+                  >
+                    I understand this will deactivate the selected products
                   </Label>
                 </div>
               </div>
@@ -285,21 +416,34 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
 
           {/* Action Buttons */}
           <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isProcessing}
+            >
               Cancel
             </Button>
             {operation === "update" && (
-              <Button onClick={handleBulkUpdate}>
-                Update {selectedProducts.length} Products
+              <Button onClick={handleBulkUpdate} disabled={isProcessing}>
+                {isProcessing
+                  ? "Updating..."
+                  : `Update ${selectedProducts.length} Product${
+                      selectedProducts.length > 1 ? "s" : ""
+                    }`}
               </Button>
             )}
             {operation === "delete" && (
               <Button
                 variant="destructive"
                 onClick={handleBulkDelete}
-                disabled={!confirmDelete}
+                disabled={!confirmDelete || isProcessing}
               >
-                Delete {selectedProducts.length} Products
+                {isProcessing
+                  ? "Deleting..."
+                  : `Delete ${selectedProducts.length} Product${
+                      selectedProducts.length > 1 ? "s" : ""
+                    }`}
               </Button>
             )}
           </div>

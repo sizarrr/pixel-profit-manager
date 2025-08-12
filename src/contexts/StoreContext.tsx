@@ -10,6 +10,7 @@ export interface Product {
   quantity: number;
   description: string;
   image?: string;
+  barcode?: string; // New field
   lowStockThreshold: number;
   isActive: boolean;
   createdAt: Date;
@@ -54,7 +55,14 @@ interface DashboardData {
     month: string;
     sales: number;
     revenue: number;
+    profit?: number;
   }>;
+}
+
+interface MonthlyData {
+  month: string;
+  sales: number;
+  profit: number;
 }
 
 interface StoreContextType {
@@ -77,8 +85,9 @@ interface StoreContextType {
     value: number;
     count: number;
   }[];
-  getMonthlySalesData: () => { month: string; sales: number; profit: number }[];
+  getMonthlySalesData: () => MonthlyData[];
   refreshData: () => Promise<void>;
+  searchProductByBarcode: (barcode: string) => Promise<Product | null>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -100,6 +109,7 @@ const convertApiProduct = (apiProduct: ApiProduct): Product => ({
   sellPrice: apiProduct.sellPrice,
   quantity: apiProduct.quantity,
   description: apiProduct.description || "",
+  barcode: apiProduct.barcode, // New field
   lowStockThreshold: apiProduct.lowStockThreshold,
   isActive: apiProduct.isActive,
   createdAt: new Date(apiProduct.createdAt),
@@ -116,6 +126,81 @@ const convertApiSale = (apiSale: ApiSale): Sale => ({
   receiptNumber: apiSale.receiptNumber,
   date: new Date(apiSale.createdAt),
 });
+
+// Helper function to calculate profit for a sale
+const calculateSaleProfit = (sale: Sale, products: Product[]): number => {
+  return sale.products.reduce((saleProfit, saleProduct) => {
+    const originalProduct = products.find(
+      (p) => p.id === saleProduct.productId
+    );
+    if (originalProduct) {
+      const profit =
+        (saleProduct.sellPrice - originalProduct.buyPrice) *
+        saleProduct.quantity;
+      return saleProfit + Math.max(0, profit); // Ensure profit is not negative
+    }
+    return saleProfit;
+  }, 0);
+};
+
+// Helper function to get month name from date
+const getMonthName = (date: Date): string => {
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return months[date.getMonth()];
+};
+
+// Helper function to get last 6 months data
+const getLast6MonthsData = (
+  sales: Sale[],
+  products: Product[]
+): MonthlyData[] => {
+  const now = new Date();
+  const monthsData: MonthlyData[] = [];
+
+  // Generate last 6 months including current month
+  for (let i = 5; i >= 0; i--) {
+    const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthName = getMonthName(monthDate);
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+
+    // Filter sales for this month
+    const monthSales = sales.filter((sale) => {
+      const saleDate = new Date(sale.date);
+      return saleDate.getFullYear() === year && saleDate.getMonth() === month;
+    });
+
+    // Calculate totals for this month
+    const totalSales = monthSales.reduce(
+      (sum, sale) => sum + sale.totalAmount,
+      0
+    );
+    const totalProfit = monthSales.reduce((profit, sale) => {
+      return profit + calculateSaleProfit(sale, products);
+    }, 0);
+
+    monthsData.push({
+      month: monthName,
+      sales: Math.round(totalSales * 100) / 100, // Round to 2 decimal places
+      profit: Math.round(totalProfit * 100) / 100,
+    });
+  }
+
+  return monthsData;
+};
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -155,6 +240,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         setDashboardData({
           ...data,
           recentSales: data.recentSales.map(convertApiSale),
+          // Ensure monthlySales has proper structure
+          monthlySales: data.monthlySales || [],
         });
       }
     } catch (err) {
@@ -249,6 +336,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+  const searchProductByBarcode = async (
+    barcode: string
+  ): Promise<Product | null> => {
+    try {
+      const response = await apiService.getProductByBarcode(barcode);
+      if (response.success) {
+        return convertApiProduct(response.data.product);
+      }
+      return null;
+    } catch (error) {
+      console.error("Error searching product by barcode:", error);
+      return null;
+    }
+  };
 
   const addSale = async (
     saleData: Omit<Sale, "id" | "date" | "receiptNumber">
@@ -273,6 +374,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         if (productsResponse.success) {
           setProducts(productsResponse.data.products.map(convertApiProduct));
         }
+
+        // Refresh dashboard data to update charts
+        await refreshDashboardData();
       }
     } catch (err) {
       console.error("Error adding sale:", err);
@@ -280,6 +384,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       throw err;
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Separate function to refresh dashboard data
+  const refreshDashboardData = async () => {
+    try {
+      const dashboardResponse = await apiService.getDashboardOverview();
+      if (dashboardResponse.success) {
+        const data = dashboardResponse.data;
+        setDashboardData({
+          ...data,
+          recentSales: data.recentSales.map(convertApiSale),
+          monthlySales: data.monthlySales || [],
+        });
+      }
+    } catch (err) {
+      console.error("Error refreshing dashboard data:", err);
     }
   };
 
@@ -314,24 +435,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       0
     );
 
-    // Calculate profit
+    // Calculate profit using the helper function
     const totalProfit = monthlySales.reduce((profit, sale) => {
-      const saleProfit = sale.products.reduce((sp, product) => {
-        const originalProduct = products.find(
-          (p) => p.id === product.productId
-        );
-        if (originalProduct) {
-          return (
-            sp +
-            (product.sellPrice - originalProduct.buyPrice) * product.quantity
-          );
-        }
-        return sp;
-      }, 0);
-      return profit + saleProfit;
+      return profit + calculateSaleProfit(sale, products);
     }, 0);
 
-    return { sales: totalSales, profit: totalProfit };
+    return {
+      sales: Math.round(totalSales * 100) / 100,
+      profit: Math.round(totalProfit * 100) / 100,
+    };
   };
 
   const getCategoryDistribution = () => {
@@ -355,62 +467,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     }));
   };
 
-  const getMonthlySalesData = () => {
-    if (dashboardData?.monthlySales) {
-      // Map dashboardData.monthlySales to ensure 'profit' property exists
-      return dashboardData.monthlySales.map((ms) => ({
-        month: ms.month,
-        sales: ms.sales,
-        profit:
-          typeof (ms as any).profit !== "undefined"
-            ? (ms as any).profit
-            : typeof ms.revenue !== "undefined"
-            ? ms.revenue
-            : 0,
-      }));
+  const getMonthlySalesData = (): MonthlyData[] => {
+    try {
+      // First, try to use dashboard data from API
+      if (
+        dashboardData?.monthlySales &&
+        dashboardData.monthlySales.length > 0
+      ) {
+        console.log("Using dashboard API data for monthly sales");
+        return dashboardData.monthlySales.map((ms) => ({
+          month: ms.month,
+          sales: ms.revenue || ms.sales || 0,
+          profit: ms.profit || (ms.revenue ? ms.revenue * 0.2 : 0), // Estimate 20% profit margin if not provided
+        }));
+      }
+
+      // Fallback to local calculation with improved logic
+      console.log("Using local calculation for monthly sales data");
+      return getLast6MonthsData(sales, products);
+    } catch (error) {
+      console.error("Error in getMonthlySalesData:", error);
+      // Return empty data structure to prevent chart crashes
+      return [
+        { month: "Jan", sales: 0, profit: 0 },
+        { month: "Feb", sales: 0, profit: 0 },
+        { month: "Mar", sales: 0, profit: 0 },
+        { month: "Apr", sales: 0, profit: 0 },
+        { month: "May", sales: 0, profit: 0 },
+        { month: "Jun", sales: 0, profit: 0 },
+      ];
     }
-
-    // Fallback to local calculation
-    const months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-    const currentMonth = new Date().getMonth();
-
-    return months.slice(0, currentMonth + 1).map((month, index) => {
-      const monthSales = sales.filter((sale) => sale.date.getMonth() === index);
-      const totalSales = monthSales.reduce(
-        (total, sale) => total + sale.totalAmount,
-        0
-      );
-      const totalProfit = monthSales.reduce((profit, sale) => {
-        const saleProfit = sale.products.reduce((sp, product) => {
-          const originalProduct = products.find(
-            (p) => p.id === product.productId
-          );
-          if (originalProduct) {
-            return (
-              sp +
-              (product.sellPrice - originalProduct.buyPrice) * product.quantity
-            );
-          }
-          return sp;
-        }, 0);
-        return profit + saleProfit;
-      }, 0);
-
-      return { month, sales: totalSales, profit: totalProfit };
-    });
   };
 
   return (
@@ -431,6 +517,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         getCategoryDistribution,
         getMonthlySalesData,
         refreshData,
+        searchProductByBarcode,
       }}
     >
       {children}

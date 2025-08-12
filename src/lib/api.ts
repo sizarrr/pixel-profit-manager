@@ -65,6 +65,7 @@ export interface Product {
   sellPrice: number;
   quantity: number;
   description?: string;
+  barcode?: string; // New field
   lowStockThreshold: number;
   isActive: boolean;
   createdAt: string;
@@ -220,6 +221,26 @@ export const apiService = {
       throw error;
     }
   },
+  async getProductByBarcode(barcode: string) {
+    try {
+      const response = await api.get(`/products/barcode/${barcode}`);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching product by barcode:", error);
+      throw error;
+    }
+  },
+  async searchProducts(query: string) {
+    try {
+      const response = await api.get(
+        `/products?search=${encodeURIComponent(query)}&limit=50`
+      );
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error searching products:", error);
+      throw error;
+    }
+  },
 
   // Sales
   async getSales(params?: {
@@ -305,31 +326,64 @@ export const apiService = {
   // Dashboard
   async getDashboardOverview() {
     try {
+      console.log("🔍 Fetching dashboard overview...");
       const response = await api.get("/dashboard/overview");
+      console.log("📊 Dashboard raw response:", response.data);
 
-      // Transform dashboard response
+      // Transform dashboard response to handle your backend structure
       if (response.data && response.data.status === "success") {
         const data = response.data.data;
+        console.log("📈 Dashboard data structure:", data);
+
+        // Safely extract data with fallbacks
+        const transformedData = {
+          totalProducts: data.products?.totalProducts || 0,
+          totalSales: data.sales?.period?.totalSales || 0,
+          totalRevenue: data.sales?.period?.totalRevenue || 0,
+          totalProfit: data.profit?.totalProfit || 0,
+          lowStockProducts: data.products?.lowStockCount || 0,
+          recentSales: Array.isArray(data.recentSales) ? data.recentSales : [],
+          topProducts: Array.isArray(data.topProducts) ? data.topProducts : [],
+          salesByCategory: Array.isArray(data.categoryDistribution)
+            ? data.categoryDistribution
+            : [],
+          monthlySales: Array.isArray(data.monthlySalesData)
+            ? data.monthlySalesData
+            : [],
+        };
+
+        console.log("✅ Transformed dashboard data:", transformedData);
+
         return {
           success: true,
-          data: {
-            totalProducts: data.products?.totalProducts || 0,
-            totalSales: data.sales?.period?.totalSales || 0,
-            totalRevenue: data.sales?.period?.totalRevenue || 0,
-            totalProfit: data.profit?.totalProfit || 0,
-            lowStockProducts: data.products?.lowStockCount || 0,
-            recentSales: data.recentSales || [],
-            topProducts: data.topProducts || [],
-            salesByCategory: data.categoryDistribution || [],
-            monthlySales: data.monthlySalesData || [],
-          },
+          data: transformedData,
         };
       }
 
-      return response.data;
+      console.warn("⚠️ Dashboard response missing expected structure");
+      return {
+        success: true,
+        data: {
+          totalProducts: 0,
+          totalSales: 0,
+          totalRevenue: 0,
+          totalProfit: 0,
+          lowStockProducts: 0,
+          recentSales: [],
+          topProducts: [],
+          salesByCategory: [],
+          monthlySales: [],
+        },
+      };
     } catch (error) {
       console.error("❌ Error fetching dashboard overview:", error);
-      // Return empty data instead of throwing
+      console.error("🔍 Error details:", {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+
+      // Return safe fallback data instead of throwing
       return {
         success: true,
         data: {

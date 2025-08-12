@@ -2,6 +2,7 @@ import express from "express";
 import {
   getAllProducts,
   getProduct,
+  getProductByBarcode,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -9,12 +10,14 @@ import {
   getCategories,
   updateQuantity,
   getProductStats,
+  searchProducts,
 } from "../controllers/productController.js";
 import {
   validateProduct,
   validateProductUpdate,
   validateObjectId,
   validateQuery,
+  validateBarcode,
 } from "../middleware/validation.js";
 
 const router = express.Router();
@@ -27,6 +30,12 @@ router.get("/low-stock", getLowStockProducts);
 
 // Product categories
 router.get("/categories", getCategories);
+
+// Search products (for barcode and text search)
+router.get("/search", searchProducts);
+
+// Barcode lookup - must come before /:id route
+router.get("/barcode/:barcode", validateBarcode, getProductByBarcode);
 
 // Main product routes
 router

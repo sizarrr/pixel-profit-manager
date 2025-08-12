@@ -31,6 +31,7 @@ interface ProductFormData {
   buyPrice: number;
   sellPrice: number;
   quantity: number;
+  barcode: string;
   description: string;
 }
 
@@ -177,6 +178,19 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="barcode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Barcode (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Enter or scan barcode" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
