@@ -65,7 +65,7 @@ export interface Product {
   sellPrice: number;
   quantity: number;
   description?: string;
-  barcode?: string; // New field
+  barcode?: string;
   lowStockThreshold: number;
   isActive: boolean;
   createdAt: string;
@@ -113,6 +113,44 @@ export interface DashboardOverview {
     revenue: number;
   }>;
 }
+
+// Barcode Utility Functions - ADD THESE HERE
+export const barcodeUtils = {
+  // Validate barcode format
+  validateBarcode: (barcode: string): boolean => {
+    if (!barcode || typeof barcode !== "string") return false;
+
+    const trimmed = barcode.trim();
+
+    // Common barcode formats: UPC (12 digits), EAN (13 digits), Code128 (variable)
+    // Allow 6-20 alphanumeric characters to be flexible
+    return /^[a-zA-Z0-9]{6,20}$/.test(trimmed);
+  },
+
+  // Format barcode for display
+  formatBarcode: (barcode: string): string => {
+    if (!barcode) return "";
+    return barcode.trim().toUpperCase();
+  },
+
+  // Check if string looks like a barcode (for auto-detection)
+  isBarcodeLike: (input: string): boolean => {
+    if (!input || typeof input !== "string") return false;
+    const trimmed = input.trim();
+
+    // Consider it barcode-like if it's 8+ digits or alphanumeric 8+ chars
+    return /^\d{8,}$/.test(trimmed) || /^[a-zA-Z0-9]{8,}$/.test(trimmed);
+  },
+
+  // Clean barcode input (remove special chars, spaces, etc.)
+  cleanBarcode: (barcode: string): string => {
+    if (!barcode) return "";
+    return barcode
+      .trim()
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .toUpperCase();
+  },
+};
 
 // API Methods
 export const apiService = {
@@ -163,10 +201,31 @@ export const apiService = {
   ) {
     try {
       console.log("🚀 Creating product:", product);
-      const response = await api.post("/products", product);
+
+      // Clean up the product data before sending
+      const cleanProduct = {
+        ...product,
+        barcode: product.barcode?.trim() || undefined, // Remove empty strings
+      };
+
+      // Validate barcode if provided
+      if (
+        cleanProduct.barcode &&
+        !barcodeUtils.validateBarcode(cleanProduct.barcode)
+      ) {
+        throw new Error("Invalid barcode format");
+      }
+
+      // Remove undefined values to prevent backend issues
+      Object.keys(cleanProduct).forEach((key) => {
+        if (cleanProduct[key] === undefined) {
+          delete cleanProduct[key];
+        }
+      });
+
+      const response = await api.post("/products", cleanProduct);
       console.log("✅ Product created, raw response:", response.data);
 
-      // The response interceptor should have already transformed this
       return response.data;
     } catch (error) {
       console.error("❌ Error creating product:", error);
@@ -181,6 +240,11 @@ export const apiService = {
 
   async updateProduct(id: string, product: Partial<Product>) {
     try {
+      // Validate barcode if being updated
+      if (product.barcode && !barcodeUtils.validateBarcode(product.barcode)) {
+        throw new Error("Invalid barcode format");
+      }
+
       const response = await api.put(`/products/${id}`, product);
       return response.data;
     } catch (error) {
@@ -221,23 +285,50 @@ export const apiService = {
       throw error;
     }
   },
+
   async getProductByBarcode(barcode: string) {
     try {
-      const response = await api.get(`/products/barcode/${barcode}`);
+      console.log("🔍 API: Searching for barcode:", barcode);
+
+      // Clean and validate barcode
+      const cleanedBarcode = barcodeUtils.cleanBarcode(barcode);
+      if (!barcodeUtils.validateBarcode(cleanedBarcode)) {
+        throw new Error("Invalid barcode format");
+      }
+
+      const response = await api.get(
+        `/products/barcode/${encodeURIComponent(cleanedBarcode)}`
+      );
+      console.log("✅ API: Barcode search response:", response.data);
       return response.data;
     } catch (error) {
-      console.error("❌ Error fetching product by barcode:", error);
+      console.error("❌ API: Error fetching product by barcode:", error);
+
+      // If it's a 404, return a structured response instead of throwing
+      if (error.response?.status === 404) {
+        return {
+          success: false,
+          message: "Product not found",
+          data: null,
+        };
+      }
       throw error;
     }
   },
+
   async searchProducts(query: string) {
     try {
+      console.log("🔍 API: Searching products with query:", query);
+
+      // Use the search endpoint with proper encoding
       const response = await api.get(
-        `/products?search=${encodeURIComponent(query)}&limit=50`
+        `/products/search?query=${encodeURIComponent(query)}`
       );
+      console.log("✅ API: Search results:", response.data);
+
       return response.data;
     } catch (error) {
-      console.error("❌ Error searching products:", error);
+      console.error("❌ API: Error searching products:", error);
       throw error;
     }
   },

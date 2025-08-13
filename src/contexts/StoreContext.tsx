@@ -270,6 +270,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         sellPrice: productData.sellPrice,
         quantity: productData.quantity,
         description: productData.description,
+        barcode: productData.barcode, // Make sure barcode is included
         lowStockThreshold: productData.lowStockThreshold || 5,
         isActive: true,
       });
@@ -286,7 +287,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
-
   const updateProduct = async (id: string, productData: Partial<Product>) => {
     setLoading(true);
     setError(null);
@@ -340,17 +340,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     barcode: string
   ): Promise<Product | null> => {
     try {
+      console.log("🔍 Searching for barcode:", barcode);
+
+      // First try API search
       const response = await apiService.getProductByBarcode(barcode);
-      if (response.success) {
+      if (response.success && response.data && response.data.product) {
+        console.log("✅ Found product via API:", response.data.product);
         return convertApiProduct(response.data.product);
       }
-      return null;
     } catch (error) {
-      console.error("Error searching product by barcode:", error);
-      return null;
+      console.warn("⚠️ API barcode search failed, trying local search:", error);
     }
-  };
 
+    try {
+      // Fallback to local products search
+      const localProduct = products.find(
+        (p) =>
+          p.barcode === barcode.trim() ||
+          p.name.toLowerCase().includes(barcode.toLowerCase()) ||
+          p.id === barcode.trim()
+      );
+
+      if (localProduct) {
+        console.log("✅ Found product locally:", localProduct);
+        return localProduct;
+      }
+
+      // If still not found, try searching via regular products API with barcode term
+      const searchResponse = await apiService.getProducts({
+        search: barcode,
+        limit: 1,
+      });
+      if (
+        searchResponse.success &&
+        searchResponse.data.products &&
+        searchResponse.data.products.length > 0
+      ) {
+        const foundProduct = searchResponse.data.products[0];
+        console.log("✅ Found product via search API:", foundProduct);
+        return convertApiProduct(foundProduct);
+      }
+    } catch (error) {
+      console.error("❌ Local barcode search failed:", error);
+    }
+
+    console.log("❌ No product found for barcode:", barcode);
+    return null;
+  };
   const addSale = async (
     saleData: Omit<Sale, "id" | "date" | "receiptNumber">
   ) => {

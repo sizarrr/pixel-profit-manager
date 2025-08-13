@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "@/contexts/StoreContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   DollarSign,
   Package,
   CheckCircle,
+  Scan,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,17 +33,24 @@ const Sales = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isProcessingSale, setIsProcessingSale] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const [isBarcodeFocused, setIsBarcodeFocused] = useState(false);
-  const [barcodeBuffer, setBarcodeBuffer] = useState("");
-  const [lastKeyTime, setLastKeyTime] = useState(0);
+  // Barcode scanning state
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [isBarcodeScanMode, setIsBarcodeScanMode] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce timer for barcode processing
+  const barcodeTimeoutRef = useRef<NodeJS.Timeout>();
 
   const availableProducts = products.filter((p) => p.quantity > 0);
   const filteredProducts = availableProducts.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchTerm.toLowerCase())
+      product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.barcode &&
+        product.barcode.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const addToCart = (product: any) => {
@@ -58,8 +66,8 @@ const Sales = () => {
           )
         );
         toast({
-          title: "Added to Cart",
-          description: `${product.name} quantity updated`,
+          title: "Updated Cart",
+          description: `${product.name} quantity: ${existingItem.quantity + 1}`,
         });
       } else {
         toast({
@@ -79,7 +87,7 @@ const Sales = () => {
       setCart((prev) => [...prev, newCartItem]);
       toast({
         title: "Added to Cart",
-        description: `${product.name} added to cart`,
+        description: `${product.name} added successfully`,
       });
     }
   };
@@ -128,6 +136,106 @@ const Sales = () => {
     );
   };
 
+  // Improved barcode search function
+  const handleBarcodeSearch = useCallback(
+    async (barcode: string) => {
+      if (!barcode.trim()) return;
+
+      setIsSearching(true);
+      console.log("🔍 Searching for barcode:", barcode);
+
+      try {
+        // First try direct barcode lookup
+        let product = await searchProductByBarcode(barcode.trim());
+
+        if (!product) {
+          // If not found by barcode, search in local products
+          product = products.find(
+            (p) =>
+              p.barcode === barcode.trim() ||
+              p.name.toLowerCase().includes(barcode.toLowerCase()) ||
+              p.id === barcode.trim()
+          );
+        }
+
+        if (product) {
+          if (product.quantity > 0) {
+            addToCart(product);
+            // Clear inputs after successful scan
+            setBarcodeInput("");
+            setSearchTerm("");
+
+            // Play success sound if available
+            if (typeof window !== "undefined" && window.speechSynthesis) {
+              const utterance = new SpeechSynthesisUtterance(
+                `Added ${product.name}`
+              );
+              utterance.volume = 0.3;
+              utterance.rate = 1.2;
+              window.speechSynthesis.speak(utterance);
+            }
+          } else {
+            toast({
+              title: "Out of Stock",
+              description: `${product.name} is currently out of stock`,
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({
+            title: "Product Not Found",
+            description: `No product found with barcode: ${barcode}`,
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Barcode search error:", error);
+        toast({
+          title: "Search Error",
+          description: "Failed to search product. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [searchProductByBarcode, products, addToCart, toast]
+  );
+
+  // Handle barcode input changes
+  const handleBarcodeInputChange = (value: string) => {
+    setBarcodeInput(value);
+
+    // Clear existing timeout
+    if (barcodeTimeoutRef.current) {
+      clearTimeout(barcodeTimeoutRef.current);
+    }
+
+    // If it looks like a barcode (8+ digits), auto-search after 500ms pause
+    if (/^\d{8,}$/.test(value.trim()) && value.length >= 8) {
+      barcodeTimeoutRef.current = setTimeout(() => {
+        handleBarcodeSearch(value);
+      }, 500);
+    }
+  };
+
+  // Handle barcode input key press
+  const handleBarcodeKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (barcodeTimeoutRef.current) {
+        clearTimeout(barcodeTimeoutRef.current);
+      }
+      handleBarcodeSearch(barcodeInput);
+    }
+  };
+
+  // Handle regular search
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+  };
+
+  // Process sale function
   const processSale = async () => {
     if (cart.length === 0) {
       toast({
@@ -171,14 +279,21 @@ const Sales = () => {
 
       toast({
         title: "Sale Completed",
-        description: `Sale of ${getTotalAmount().toFixed(
+        description: `Sale of $${getTotalAmount().toFixed(
           2
         )} processed successfully!`,
         duration: 5000,
       });
 
-      // Clear cart after successful sale
+      // Clear cart and inputs after successful sale
       setCart([]);
+      setBarcodeInput("");
+      setSearchTerm("");
+
+      // Focus back to barcode input for next sale
+      setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 100);
 
       // Refresh data to update charts and inventory
       setTimeout(() => {
@@ -210,14 +325,14 @@ const Sales = () => {
       ${cart
         .map(
           (item) =>
-            `${item.productName} x${item.quantity} @ ${item.sellPrice} = ${(
+            `${item.productName} x${item.quantity} @ $${item.sellPrice} = $${(
               item.sellPrice * item.quantity
             ).toFixed(2)}`
         )
         .join("\n      ")}
       
       =====================
-      Total: ${getTotalAmount().toFixed(2)}
+      Total: $${getTotalAmount().toFixed(2)}
       =====================
       
       Thank you for your purchase!
@@ -235,86 +350,30 @@ const Sales = () => {
 
   const clearCart = () => {
     setCart([]);
+    setBarcodeInput("");
+    setSearchTerm("");
     toast({
       title: "Cart Cleared",
       description: "All items removed from cart",
     });
   };
 
-  const handleBarcodeSubmit = async (barcode: string) => {
-    if (!barcode.trim()) return;
-
-    setIsProcessingSale(true);
-
-    try {
-      const product = await searchProductByBarcode(barcode.trim());
-
-      if (product && product.quantity > 0) {
-        addToCart(product);
-        toast({
-          title: "Product Added",
-          description: `${product.name} added to cart`,
-        });
-
-        // Clear search after successful barcode scan
-        setSearchTerm("");
-      } else if (product && product.quantity === 0) {
-        toast({
-          title: "Out of Stock",
-          description: `${product.name} is out of stock`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Product Not Found",
-          description: `No product found with barcode: ${barcode}`,
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Search Error",
-        description: "Failed to search product by barcode",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessingSale(false);
-    }
-  };
-
-  const handleSearchChange = async (value: string) => {
-    setSearchTerm(value);
-
-    // Auto-search when barcode-like input is detected
-    if (/^\d{8,}$/.test(value.trim()) && value.length >= 8) {
-      await handleBarcodeSubmit(value);
-    }
-  };
-
-  // Barcode scanner simulation (detects rapid key input)
+  // Focus barcode input on component mount
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      const currentTime = Date.now();
-      const timeDiff = currentTime - lastKeyTime;
+    const timer = setTimeout(() => {
+      barcodeInputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
-      // If keys are pressed rapidly (< 50ms between keys), treat as barcode scan
-      if (timeDiff < 50 && timeDiff > 0) {
-        setBarcodeBuffer((prev) => prev + e.key);
-      } else if (e.key === "Enter" && barcodeBuffer.length >= 8) {
-        // Process barcode on Enter
-        handleBarcodeSubmit(barcodeBuffer);
-        setBarcodeBuffer("");
-      } else if (timeDiff > 100) {
-        // Reset buffer if typing is too slow (human typing)
-        setBarcodeBuffer(e.key);
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (barcodeTimeoutRef.current) {
+        clearTimeout(barcodeTimeoutRef.current);
       }
-
-      setLastKeyTime(currentTime);
     };
-
-    window.addEventListener("keypress", handleKeyPress);
-    return () => window.removeEventListener("keypress", handleKeyPress);
-  }, [lastKeyTime, barcodeBuffer]);
+  }, []);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -322,39 +381,70 @@ const Sales = () => {
       <div className="lg:col-span-2 space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Sales</h1>
-          <p className="text-gray-600">Select products to add to cart</p>
+          <p className="text-gray-600">
+            Scan barcodes or select products to add to cart
+          </p>
         </div>
 
-        {/* Search */}
+        {/* Barcode Scanner Input */}
+        <Card className="border-2 border-blue-200 bg-blue-50">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Scan className="w-5 h-5 text-blue-600" />
+                <h3 className="font-semibold text-blue-900">Barcode Scanner</h3>
+                {isSearching && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                )}
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <Input
+                  ref={barcodeInputRef}
+                  placeholder="Scan or type barcode here..."
+                  value={barcodeInput}
+                  onChange={(e) => handleBarcodeInputChange(e.target.value)}
+                  onKeyPress={handleBarcodeKeyPress}
+                  disabled={isSearching}
+                  className="pl-10 bg-white text-lg font-mono "
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>
+                  💡 Tip: Scan barcode or type product code for instant add
+                </span>
+                <span
+                  className={`font-medium ${
+                    barcodeInput.length >= 8
+                      ? "text-green-600"
+                      : "text-gray-400"
+                  }`}
+                >
+                  {barcodeInput.length >= 8
+                    ? "✓ Ready"
+                    : `${Math.max(0, 8 - barcodeInput.length)} more chars`}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Regular Search */}
         <Card>
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="p-4">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <Input
-                ref={barcodeInputRef}
-                placeholder="Search products or scan barcode..."
+                ref={searchInputRef}
+                placeholder="Search products by name or category..."
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                onFocus={() => setIsBarcodeFocused(true)}
-                onBlur={() => setIsBarcodeFocused(false)}
                 className="pl-10"
               />
             </div>
-
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>
-                💡 Tip: Use barcode scanner or type barcode to quick-add
-              </span>
-              {isBarcodeFocused && (
-                <span className="text-green-600">🟢 Scanner Ready</span>
-              )}
-            </div>
-
-            {barcodeBuffer && (
-              <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                Scanning: {barcodeBuffer}
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -363,7 +453,8 @@ const Sales = () => {
           {filteredProducts.map((product) => (
             <Card
               key={product.id}
-              className="hover:shadow-md transition-shadow"
+              className="hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => addToCart(product)}
             >
               <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-3">
@@ -371,9 +462,14 @@ const Sales = () => {
                     <h3 className="font-semibold text-gray-900">
                       {product.name}
                     </h3>
-                    <Badge variant="secondary" className="mt-1">
-                      {product.category}
-                    </Badge>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary">{product.category}</Badge>
+                      {product.barcode && (
+                        <Badge variant="outline" className="text-xs font-mono">
+                          {product.barcode}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-green-600">
@@ -394,7 +490,10 @@ const Sales = () => {
                 </p>
 
                 <Button
-                  onClick={() => addToCart(product)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addToCart(product);
+                  }}
                   className="w-full flex items-center gap-2"
                   disabled={product.quantity === 0}
                 >
@@ -411,10 +510,10 @@ const Sales = () => {
             <CardContent className="text-center py-12">
               <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No products available
+                No products found
               </h3>
               <p className="text-gray-500">
-                {searchTerm
+                {searchTerm || barcodeInput
                   ? "No products match your search."
                   : "No products in stock."}
               </p>
@@ -450,7 +549,7 @@ const Sales = () => {
                 <ShoppingCart className="w-12 h-12 mx-auto text-gray-300 mb-4" />
                 <p className="text-gray-500">Your cart is empty</p>
                 <p className="text-sm text-gray-400 mt-1">
-                  Add products to get started
+                  Scan a barcode or add products to get started
                 </p>
               </div>
             ) : (
