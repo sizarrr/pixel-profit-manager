@@ -197,6 +197,9 @@ const Sales = () => {
         });
       } finally {
         setIsSearching(false);
+        setTimeout(() => {
+          barcodeInputRef.current?.focus();
+        }, 100);
       }
     },
     [searchProductByBarcode, products, addToCart, toast]
