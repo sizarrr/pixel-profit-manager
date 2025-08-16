@@ -10,9 +10,8 @@ import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Sales from "@/pages/Sales";
+import Reports from "@/pages/Reports"; // Import the Reports component
 import NotFound from "./pages/NotFound";
-
-// Add to your routes
 
 const queryClient = new QueryClient();
 
@@ -28,14 +27,8 @@ const AppLayout = () => {
               <Route path="/" element={<Dashboard />} />
               <Route path="/products" element={<Products />} />
               <Route path="/sales" element={<Sales />} />
-              <Route
-                path="/reports"
-                element={
-                  <div className="text-center py-20">
-                    Reports page coming soon...
-                  </div>
-                }
-              />
+              <Route path="/reports" element={<Reports />} />
+              {/* Add Reports route */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </div>
