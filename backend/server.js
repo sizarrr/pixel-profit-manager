@@ -12,6 +12,7 @@ import errorHandler, { notFound } from "./middleware/errorHandler.js";
 
 // Create Express application
 const app = express();
+let server; // Will hold the HTTP server instance once started
 
 // Connect to MongoDB
 connectDB();
@@ -98,18 +99,23 @@ app.use(errorHandler);
 const gracefulShutdown = (signal) => {
   console.log(`\n🔄 Received ${signal}. Graceful shutdown initiated...`);
 
-  server.close(() => {
-    console.log("📪 HTTP server closed.");
-    process.exit(0);
-  });
+  if (server && typeof server.close === "function") {
+    server.close(() => {
+      console.log("📪 HTTP server closed.");
+      process.exit(0);
+    });
 
-  // Force close after 30 seconds
-  setTimeout(() => {
-    console.error(
-      "❌ Could not close connections in time, forcefully shutting down"
-    );
-    process.exit(1);
-  }, 30000);
+    // Force close after 30 seconds
+    setTimeout(() => {
+      console.error(
+        "❌ Could not close connections in time, forcefully shutting down"
+      );
+      process.exit(1);
+    }, 30000);
+  } else {
+    // Server not yet started; exit immediately
+    process.exit(0);
+  }
 };
 
 // Handle unhandled promise rejections
@@ -134,7 +140,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Start server
 const PORT = config.port;
-const server = app.listen(PORT, () => {
+server = app.listen(PORT, () => {
   console.log(`
 🚀 Store Management API Server Started!
 📍 Environment: ${config.nodeEnv}

@@ -12,6 +12,7 @@ import Products from "@/pages/Products";
 import Sales from "@/pages/Sales";
 import Reports from "@/pages/Reports"; // Import the Reports component
 import NotFound from "./pages/NotFound";
+import { ThemeProvider } from "next-themes";
 
 const queryClient = new QueryClient();
 
@@ -40,17 +41,19 @@ const AppLayout = () => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <LanguageProvider>
-          <StoreProvider>
-            <AppLayout />
-          </StoreProvider>
-        </LanguageProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <LanguageProvider>
+            <StoreProvider>
+              <AppLayout />
+            </StoreProvider>
+          </LanguageProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

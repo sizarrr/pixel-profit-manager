@@ -20,7 +20,9 @@ const handleCastErrorDB = (err) => {
 
 // Handle Duplicate field error
 const handleDuplicateFieldsDB = (err) => {
-  const value = err.errmsg.match(/(["'])(\\?.)*?\1/)[0];
+  const value = err.keyValue
+    ? JSON.stringify(err.keyValue)
+    : (err.message && err.message.match(/(["'])(\\?.)*?\1/))?.[0] || '';
   const message = `Duplicate field value: ${value}. Please use another value!`;
   return new AppError(message, 400);
 };
@@ -69,8 +71,7 @@ const errorHandler = (err, req, res, next) => {
   if (config.isDevelopment) {
     sendErrorDev(err, res);
   } else {
-    let error = { ...err };
-    error.message = err.message;
+    let error = err; // Avoid shallow cloning to preserve non-enumerable props like name
 
     if (error.name === 'CastError') error = handleCastErrorDB(error);
     if (error.code === 11000) error = handleDuplicateFieldsDB(error);

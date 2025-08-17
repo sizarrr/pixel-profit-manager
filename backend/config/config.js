@@ -2,10 +2,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const resolvedNodeEnv = process.env.NODE_ENV || 'development';
+
 const config = {
   // Server Configuration
   port: process.env.PORT || 5000,
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: resolvedNodeEnv,
   
   // Database Configuration
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/store-management',
@@ -28,8 +30,8 @@ const config = {
   defaultLowStockThreshold: 5,
   
   // Development settings
-  isDevelopment: process.env.NODE_ENV === 'development',
-  isProduction: process.env.NODE_ENV === 'production',
+  isDevelopment: resolvedNodeEnv === 'development',
+  isProduction: resolvedNodeEnv === 'production',
   
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info'
