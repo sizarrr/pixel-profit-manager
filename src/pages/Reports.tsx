@@ -362,9 +362,7 @@ const Reports = () => {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{t("reports")}</h1>
-          <p className="text-gray-600">
-            Comprehensive analytics and insights for your store
-          </p>
+          <p className="text-gray-600">{t("reports_overview")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -376,7 +374,7 @@ const Reports = () => {
             <RefreshCw
               className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
             />
-            Refresh
+            {t("refresh")}
           </Button>
           <Button
             variant="outline"
@@ -384,7 +382,7 @@ const Reports = () => {
             className="flex items-center gap-2"
           >
             <Download className="w-4 h-4" />
-            Export Sales
+            {t("export_sales")}
           </Button>
         </div>
       </div>
@@ -395,19 +393,19 @@ const Reports = () => {
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-500" />
-              <span className="font-medium">Time Period:</span>
+              <span className="font-medium">{t("time_period")}</span>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {[
-                { label: "Today", value: "today" },
-                { label: "Yesterday", value: "yesterday" },
-                { label: "Last 7 days", value: "7days" },
-                { label: "Last 30 days", value: "30days" },
-                { label: "This Month", value: "thisMonth" },
-                { label: "Last Month", value: "lastMonth" },
-                { label: "Last 90 days", value: "90days" },
-                { label: "Last Year", value: "365days" },
+                { label: t("today"), value: "today" },
+                { label: t("yesterday"), value: "yesterday" },
+                { label: t("last_7_days"), value: "7days" },
+                { label: t("last_30_days"), value: "30days" },
+                { label: t("this_month"), value: "thisMonth" },
+                { label: t("last_month"), value: "lastMonth" },
+                { label: t("last_90_days"), value: "90days" },
+                { label: t("last_year"), value: "365days" },
               ].map((period) => (
                 <Button
                   key={period.value}
@@ -433,7 +431,7 @@ const Reports = () => {
                 <PopoverContent className="w-auto p-0" align="end">
                   <div className="flex">
                     <div className="p-3">
-                      <div className="text-sm font-medium mb-2">Start Date</div>
+                      <div className="text-sm font-medium mb-2">{t("start_date")}</div>
                       <Calendar
                         mode="single"
                         selected={startDate}
@@ -441,7 +439,7 @@ const Reports = () => {
                       />
                     </div>
                     <div className="p-3 border-l">
-                      <div className="text-sm font-medium mb-2">End Date</div>
+                      <div className="text-sm font-medium mb-2">{t("end_date")}</div>
                       <Calendar
                         mode="single"
                         selected={endDate}
@@ -462,9 +460,7 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Total Revenue
-                </p>
+                <p className="text-sm font-medium text-gray-600">{t("total_revenue")}</p>
                 <p className="text-2xl font-bold text-green-600">
                   ${totalRevenue.toFixed(2)}
                 </p>
@@ -480,7 +476,7 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Sales</p>
+                <p className="text-sm font-medium text-gray-600">{t("total_sales")}</p>
                 <p className="text-2xl font-bold text-blue-600">{totalSales}</p>
               </div>
               <div className="p-3 bg-blue-100 rounded-full">
@@ -494,9 +490,7 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Total Profit
-                </p>
+                <p className="text-sm font-medium text-gray-600">{t("total_profit_display")}</p>
                 <p className="text-2xl font-bold text-purple-600">
                   ${totalProfit.toFixed(2)}
                 </p>
@@ -512,9 +506,7 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Avg. Sale Value
-                </p>
+                <p className="text-sm font-medium text-gray-600">{t("avg_sale_value")}</p>
                 <p className="text-2xl font-bold text-orange-600">
                   ${averageSaleValue.toFixed(2)}
                 </p>
@@ -530,10 +522,10 @@ const Reports = () => {
       {/* Tabs for different reports */}
       <Tabs defaultValue="sales" className="space-y-6">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="sales">Sales Analytics</TabsTrigger>
-          <TabsTrigger value="products">Product Reports</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory Status</TabsTrigger>
-          <TabsTrigger value="financial">Financial Summary</TabsTrigger>
+          <TabsTrigger value="sales">{t("sales_analytics")}</TabsTrigger>
+          <TabsTrigger value="products">{t("product_reports")}</TabsTrigger>
+          <TabsTrigger value="inventory">{t("inventory_status")}</TabsTrigger>
+          <TabsTrigger value="financial">{t("financial_summary")}</TabsTrigger>
         </TabsList>
 
         {/* Sales Analytics Tab */}
@@ -544,7 +536,7 @@ const Reports = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="w-5 h-5" />
-                  Sales Trend
+                  {t("sales_trend")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -556,7 +548,7 @@ const Reports = () => {
                     <Tooltip
                       formatter={(value, name) => [
                         name === "revenue" ? `$${value}` : value,
-                        name === "revenue" ? "Revenue" : "Sales Count",
+                        name === "revenue" ? t("revenue") : t("sales_count"),
                       ]}
                     />
                     <Area
@@ -581,7 +573,7 @@ const Reports = () => {
             {/* Sales by Category */}
             <Card>
               <CardHeader>
-                <CardTitle>Sales by Category</CardTitle>
+                <CardTitle>{t("sales_by_category")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -602,7 +594,7 @@ const Reports = () => {
                         />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => [`$${value}`, "Revenue"]} />
+                    <Tooltip formatter={(value) => [`$${value}`, t("revenue")]} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -614,7 +606,7 @@ const Reports = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="w-5 h-5" />
-                Top Selling Products
+                {t("top_selling_products")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -643,14 +635,14 @@ const Reports = () => {
             {/* Top Selling Products Table */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Top Products by Revenue</CardTitle>
+                <CardTitle>{t("top_products_by_revenue")}</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={exportProductReport}
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  Export
+                  {t("export_products")}
                 </Button>
               </CardHeader>
               <CardContent>
@@ -665,7 +657,7 @@ const Reports = () => {
                         <div>
                           <p className="font-medium">{product.productName}</p>
                           <p className="text-sm text-gray-600">
-                            Sold: {product.quantity} units
+                            {t("sold_units").replace("{count}", String(product.quantity))}
                           </p>
                         </div>
                         <div className="text-right">
@@ -673,7 +665,7 @@ const Reports = () => {
                             ${product.revenue.toFixed(2)}
                           </p>
                           <p className="text-sm text-gray-600">
-                            Profit: ${product.profit.toFixed(2)}
+                            {t("profit")}: ${product.profit.toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -685,7 +677,7 @@ const Reports = () => {
             {/* Category Performance */}
             <Card>
               <CardHeader>
-                <CardTitle>Category Performance</CardTitle>
+                <CardTitle>{t("category_performance")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -694,12 +686,12 @@ const Reports = () => {
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-medium">{category.category}</span>
                         <Badge variant="secondary">
-                          {category.quantity} sold
+                          {t("sold_units").replace("{count}", String(category.quantity))}
                         </Badge>
                       </div>
                       <div className="flex justify-between text-sm text-gray-600">
-                        <span>Revenue: ${category.revenue.toFixed(2)}</span>
-                        <span>Profit: ${category.profit.toFixed(2)}</span>
+                        <span>{t("revenue")}: ${category.revenue.toFixed(2)}</span>
+                        <span>{t("profit")}: ${category.profit.toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
@@ -717,7 +709,7 @@ const Reports = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-orange-600">
                   <Package className="w-5 h-5" />
-                  Low Stock Alert ({lowStockProducts.length})
+                  {t("low_stock_alert")} ({lowStockProducts.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -741,10 +733,10 @@ const Reports = () => {
                             variant="outline"
                             className="text-orange-700 border-orange-300"
                           >
-                            {product.quantity} left
+                            {product.quantity} {t("left")}
                           </Badge>
                           <p className="text-xs text-gray-500 mt-1">
-                            Alert at {product.lowStockThreshold}
+                            {t("alert_at")} {product.lowStockThreshold}
                           </p>
                         </div>
                       </div>
@@ -752,7 +744,7 @@ const Reports = () => {
                   </div>
                 ) : (
                   <p className="text-gray-500 text-center py-8">
-                    No low stock items
+                    {t("no_low_stock_items")}
                   </p>
                 )}
               </CardContent>
@@ -761,7 +753,7 @@ const Reports = () => {
             {/* Inventory Value by Category */}
             <Card>
               <CardHeader>
-                <CardTitle>Inventory Value by Category</CardTitle>
+                <CardTitle>{t("inventory_value_by_category")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -783,7 +775,7 @@ const Reports = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value) => [`$${value}`, "Inventory Value"]}
+                      formatter={(value) => [`$${value}`, t("inventory_value")]}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -794,17 +786,17 @@ const Reports = () => {
           {/* Inventory Summary Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Summary by Category</CardTitle>
+              <CardTitle>{t("inventory_summary")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-3">Category</th>
-                      <th className="text-right p-3">Products</th>
-                      <th className="text-right p-3">Total Quantity</th>
-                      <th className="text-right p-3">Inventory Value</th>
+                      <th className="text-left p-3">{t("category")}</th>
+                      <th className="text-right p-3">{t("products")}</th>
+                      <th className="text-right p-3">{t("total_quantity")}</th>
+                      <th className="text-right p-3">{t("inventory_value")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -833,7 +825,7 @@ const Reports = () => {
                 <div className="text-3xl font-bold text-green-600 mb-2">
                   ${totalRevenue.toFixed(2)}
                 </div>
-                <p className="text-gray-600">Total Revenue</p>
+                <p className="text-gray-600">{t("total_revenue")}</p>
                 <div className="mt-2 text-sm text-gray-500">
                   {format(startDate, "MMM dd")} - {format(endDate, "MMM dd")}
                 </div>
@@ -845,9 +837,9 @@ const Reports = () => {
                 <div className="text-3xl font-bold text-purple-600 mb-2">
                   ${totalProfit.toFixed(2)}
                 </div>
-                <p className="text-gray-600">Total Profit</p>
+                <p className="text-gray-600">{t("total_profit_display")}</p>
                 <div className="mt-2 text-sm text-gray-500">
-                  {profitMargin.toFixed(1)}% margin
+                  {profitMargin.toFixed(1)}% {t("profit_margin")}
                 </div>
               </CardContent>
             </Card>
@@ -857,9 +849,9 @@ const Reports = () => {
                 <div className="text-3xl font-bold text-blue-600 mb-2">
                   ${averageSaleValue.toFixed(2)}
                 </div>
-                <p className="text-gray-600">Average Sale</p>
+                <p className="text-gray-600">{t("avg_sale_value")}</p>
                 <div className="mt-2 text-sm text-gray-500">
-                  From {totalSales} transactions
+                  {t("from_transactions").replace("{count}", String(totalSales))}
                 </div>
               </CardContent>
             </Card>
@@ -868,7 +860,7 @@ const Reports = () => {
           {/* Profit Trend Chart */}
           <Card>
             <CardHeader>
-              <CardTitle>Profit Trend Analysis</CardTitle>
+              <CardTitle>{t("profit_trend_analysis")}</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>

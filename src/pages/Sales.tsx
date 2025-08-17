@@ -17,6 +17,7 @@ import {
   Scan,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface CartItem {
   productId: string;
@@ -29,6 +30,7 @@ interface CartItem {
 const Sales = () => {
   const { products, addSale, refreshData, searchProductByBarcode } = useStore();
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,13 +68,13 @@ const Sales = () => {
           )
         );
         toast({
-          title: "Updated Cart",
-          description: `${product.name} quantity: ${existingItem.quantity + 1}`,
+          title: t("update"),
+          description: `${product.name} ${t("quantity")}: ${existingItem.quantity + 1}`,
         });
       } else {
         toast({
-          title: "Insufficient Stock",
-          description: `Only ${product.quantity} units available in stock.`,
+          title: t("insufficient_stock"),
+          description: `${t("only_units_available").replace("{count}", String(product.quantity))}`,
           variant: "destructive",
         });
       }
@@ -86,8 +88,8 @@ const Sales = () => {
       };
       setCart((prev) => [...prev, newCartItem]);
       toast({
-        title: "Added to Cart",
-        description: `${product.name} added successfully`,
+        title: t("add_to_cart"),
+        description: `${product.name} ${t("success").toLowerCase()}`,
       });
     }
   };
@@ -103,8 +105,8 @@ const Sales = () => {
 
     if (newQuantity > item.availableStock) {
       toast({
-        title: "Insufficient Stock",
-        description: `Only ${item.availableStock} units available.`,
+        title: t("insufficient_stock"),
+        description: `${t("only_units_available").replace("{count}", String(item.availableStock))}`,
         variant: "destructive",
       });
       return;
@@ -123,8 +125,8 @@ const Sales = () => {
 
     if (item) {
       toast({
-        title: "Removed from Cart",
-        description: `${item.productName} removed from cart`,
+        title: t("delete"),
+        description: `${item.productName} ${t("removed")}`,
       });
     }
   };
@@ -168,7 +170,7 @@ const Sales = () => {
             // Play success sound if available
             if (typeof window !== "undefined" && window.speechSynthesis) {
               const utterance = new SpeechSynthesisUtterance(
-                `Added ${product.name}`
+                `${t("add")} ${product.name}`
               );
               utterance.volume = 0.3;
               utterance.rate = 1.2;
@@ -176,23 +178,23 @@ const Sales = () => {
             }
           } else {
             toast({
-              title: "Out of Stock",
-              description: `${product.name} is currently out of stock`,
+              title: t("no_products_stock"),
+              description: `${product.name} ${t("no_products_stock")}`,
               variant: "destructive",
             });
           }
         } else {
           toast({
-            title: "Product Not Found",
-            description: `No product found with barcode: ${barcode}`,
+            title: t("error"),
+            description: `${t("no_products_available")}: ${barcode}`,
             variant: "destructive",
           });
         }
       } catch (error) {
         console.error("Barcode search error:", error);
         toast({
-          title: "Search Error",
-          description: "Failed to search product. Please try again.",
+          title: t("error"),
+          description: t("failed_add_product"),
           variant: "destructive",
         });
       } finally {
@@ -242,8 +244,8 @@ const Sales = () => {
   const processSale = async () => {
     if (cart.length === 0) {
       toast({
-        title: "Empty Cart",
-        description: "Please add items to cart before processing sale.",
+        title: t("empty_cart"),
+        description: t("add_items_first"),
         variant: "destructive",
       });
       return;
@@ -254,8 +256,8 @@ const Sales = () => {
       const product = products.find((p) => p.id === cartItem.productId);
       if (!product || product.quantity < cartItem.quantity) {
         toast({
-          title: "Stock Error",
-          description: `Insufficient stock for ${cartItem.productName}`,
+          title: t("stock_error"),
+          description: `${t("insufficient_stock")} ${cartItem.productName}`,
           variant: "destructive",
         });
         return;
@@ -281,10 +283,8 @@ const Sales = () => {
       await addSale(saleData);
 
       toast({
-        title: "Sale Completed",
-        description: `Sale of $${getTotalAmount().toFixed(
-          2
-        )} processed successfully!`,
+        title: t("sale_completed"),
+        description: `${t("sale_processed")}`,
         duration: 5000,
       });
 
@@ -305,8 +305,8 @@ const Sales = () => {
     } catch (error) {
       console.error("Sale processing error:", error);
       toast({
-        title: "Sale Failed",
-        description: "Failed to process sale. Please try again.",
+        title: t("error"),
+        description: t("failed_load_sales_data"),
         variant: "destructive",
       });
     } finally {
@@ -356,8 +356,8 @@ const Sales = () => {
     setBarcodeInput("");
     setSearchTerm("");
     toast({
-      title: "Cart Cleared",
-      description: "All items removed from cart",
+      title: t("success"),
+      description: t("clear_selection") || "All items removed from cart",
     });
   };
 
@@ -383,10 +383,8 @@ const Sales = () => {
       {/* Products Section */}
       <div className="lg:col-span-2 space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Sales</h1>
-          <p className="text-gray-600">
-            Scan barcodes or select products to add to cart
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900">{t("sales")}</h1>
+          <p className="text-gray-600">{t("scan_or_select_to_add")}</p>
         </div>
 
         {/* Barcode Scanner Input */}
@@ -395,7 +393,7 @@ const Sales = () => {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Scan className="w-5 h-5 text-blue-600" />
-                <h3 className="font-semibold text-blue-900">Barcode Scanner</h3>
+                <h3 className="font-semibold text-blue-900">{t("barcode_scanner")}</h3>
                 {isSearching && (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 )}
@@ -405,7 +403,7 @@ const Sales = () => {
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <Input
                   ref={barcodeInputRef}
-                  placeholder="Scan or type barcode here..."
+                  placeholder={t("scan_or_type_barcode")}
                   value={barcodeInput}
                   onChange={(e) => handleBarcodeInputChange(e.target.value)}
                   onKeyPress={handleBarcodeKeyPress}
@@ -417,7 +415,7 @@ const Sales = () => {
 
               <div className="flex items-center justify-between text-xs text-gray-600">
                 <span>
-                  💡 Tip: Scan barcode or type product code for instant add
+                  💡 {t("tip")}: {t("barcode_tip")}
                 </span>
                 <span
                   className={`font-medium ${
@@ -427,8 +425,8 @@ const Sales = () => {
                   }`}
                 >
                   {barcodeInput.length >= 8
-                    ? "✓ Ready"
-                    : `${Math.max(0, 8 - barcodeInput.length)} more chars`}
+                    ? `✓ ${t("ready")}`
+                    : `${Math.max(0, 8 - barcodeInput.length)} ${t("more_chars")}`}
                 </span>
               </div>
             </div>
@@ -442,7 +440,7 @@ const Sales = () => {
               <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <Input
                 ref={searchInputRef}
-                placeholder="Search products by name or category..."
+                placeholder={t("search_products_by_name_or_category")}
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-10"
@@ -483,7 +481,7 @@ const Sales = () => {
                         product.quantity <= 5 ? "text-red-500" : "text-gray-500"
                       }`}
                     >
-                      {product.quantity} in stock
+                      {product.quantity} {t("in_stock")}
                     </p>
                   </div>
                 </div>
@@ -501,7 +499,7 @@ const Sales = () => {
                   disabled={product.quantity === 0}
                 >
                   <Plus className="w-4 h-4" />
-                  Add to Cart
+                  {t("add_to_cart")}
                 </Button>
               </CardContent>
             </Card>
@@ -513,12 +511,12 @@ const Sales = () => {
             <CardContent className="text-center py-12">
               <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No products found
+                {t("no_products_found")}
               </h3>
               <p className="text-gray-500">
                 {searchTerm || barcodeInput
-                  ? "No products match your search."
-                  : "No products in stock."}
+                  ? t("no_products_match")
+                  : t("no_products_stock")}
               </p>
             </CardContent>
           </Card>
@@ -532,7 +530,7 @@ const Sales = () => {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-5 h-5" />
-                Shopping Cart ({cart.length})
+                {t("shopping_cart")} ({cart.length})
               </div>
               {cart.length > 0 && (
                 <Button
@@ -541,7 +539,7 @@ const Sales = () => {
                   onClick={clearCart}
                   className="text-red-600 hover:text-red-700"
                 >
-                  Clear All
+                  {t("clear_all")}
                 </Button>
               )}
             </CardTitle>
@@ -550,10 +548,8 @@ const Sales = () => {
             {cart.length === 0 ? (
               <div className="text-center py-8">
                 <ShoppingCart className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">Your cart is empty</p>
-                <p className="text-sm text-gray-400 mt-1">
-                  Scan a barcode or add products to get started
-                </p>
+                <p className="text-gray-500">{t("your_cart_empty")}</p>
+                <p className="text-sm text-gray-400 mt-1">{t("scan_or_add_to_get_started")}</p>
               </div>
             ) : (
               <div className="space-y-4 max-h-96 overflow-y-auto">
@@ -567,10 +563,10 @@ const Sales = () => {
                         {item.productName}
                       </h4>
                       <p className="text-sm text-gray-600">
-                        ${item.sellPrice} each
+                        ${item.sellPrice} {t("each")}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Total: ${(item.sellPrice * item.quantity).toFixed(2)}
+                        {t("total")}: ${(item.sellPrice * item.quantity).toFixed(2)}
                       </p>
                     </div>
 
@@ -625,7 +621,7 @@ const Sales = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5" />
-                Order Summary
+                {t("order_summary")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -646,7 +642,7 @@ const Sales = () => {
 
                 <div className="border-t pt-3">
                   <div className="flex justify-between items-center text-lg font-bold">
-                    <span>Total:</span>
+                    <span>{t("total")}:</span>
                     <span className="text-green-600">
                       ${getTotalAmount().toFixed(2)}
                     </span>
@@ -663,12 +659,12 @@ const Sales = () => {
                     {isProcessingSale ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Processing...
+                        {t("processing")}
                       </>
                     ) : (
                       <>
                         <CheckCircle className="w-4 h-4" />
-                        Process Sale
+                        {t("process_sale")}
                       </>
                     )}
                   </Button>
@@ -679,7 +675,7 @@ const Sales = () => {
                     className="w-full flex items-center gap-2"
                   >
                     <Receipt className="w-4 h-4" />
-                    Print Receipt
+                    {t("print_receipt")}
                   </Button>
                 </div>
               </div>
