@@ -158,6 +158,21 @@ const translations = {
     unknown: "Unknown",
     cashier: "Cashier",
 
+    // Added for Sales page
+    scan_or_select_to_add:
+      "Scan barcodes or select products to add to cart",
+    scan_or_type_barcode: "Scan or type barcode here...",
+    barcode_scanner: "Barcode Scanner",
+    barcode_tip: "Scan barcode or type product code for instant add",
+    ready: "Ready",
+    more_chars: "more chars",
+    search_products_by_name_or_category:
+      "Search products by name or category...",
+    each: "each",
+    scan_or_add_to_get_started:
+      "Scan a barcode or add products to get started",
+    removed: "removed",
+
     // Sales Search and Filter
     search_receipt_cashier_amount:
       "Search by receipt number, cashier, or amount...",
@@ -220,6 +235,13 @@ const translations = {
     from_transactions: "From {count} transactions",
     inventory_value: "Inventory Value",
 
+    // Added for Reports page
+    sales_by_category: "Sales by Category",
+    revenue: "Revenue",
+    sales_count: "Sales Count",
+    profit: "Profit",
+    total_quantity: "Total Quantity",
+
     // Form validation
     required_field: "This field is required",
     price_greater_zero: "Price must be greater than 0",
@@ -231,7 +253,6 @@ const translations = {
     // Auth & Header
     store_pos: "Store POS",
     admin: "admin",
-    cashier: "cashier",
     english: "English",
     kurdish: "کوردی",
 
@@ -407,6 +428,22 @@ const translations = {
     unknown: "نەناسراو",
     cashier: "کاشێر",
 
+    // Added for Sales page
+    scan_or_select_to_add:
+      "کۆدی کاڵا بخوێنەوە یان بەرهەم هەڵبژێرە بۆ زیادکردن بۆ سەبەتە",
+    scan_or_type_barcode: "کۆدی کاڵا بخوێنەوە یان بنووسە...",
+    barcode_scanner: "خوێنەری کۆدی کاڵا",
+    barcode_tip:
+      "کۆدی کاڵا بخوێنەوە یان کۆدی بەرهەم بنووسە بۆ زیادکردنی خێرا",
+    ready: "ئامادە",
+    more_chars: "پیت زیاتر",
+    search_products_by_name_or_category:
+      "بەرهەم بگەڕێ بە ناو یان پۆل...",
+    each: "دانە",
+    scan_or_add_to_get_started:
+      "کۆدی کاڵا بخوێنەوە یان بەرهەم زیاد بکە بۆ دەستپێکردن",
+    removed: "سڕایەوە",
+
     // Sales Search and Filter
     search_receipt_cashier_amount: "گەڕان بەپێی ژمارەی وەسڵ، کاشێر، یان بڕ...",
     advanced_filters: "فلتەرە پێشکەوتووەکان",
@@ -468,6 +505,13 @@ const translations = {
     from_transactions: "لە {count} مامەڵە",
     inventory_value: "نرخی کۆگا",
 
+    // Added for Reports page
+    sales_by_category: "فرۆشتن بەپێی پۆل",
+    revenue: "داهات",
+    sales_count: "ژمارەی فرۆشتن",
+    profit: "قازانج",
+    total_quantity: "کۆی بڕ",
+
     // Form validation
     required_field: "ئەم خانەیە پێویستە",
     price_greater_zero: "نرخ دەبێت لە ٠ زیاتر بێت",
@@ -479,7 +523,6 @@ const translations = {
     // Auth & Header
     store_pos: "سیستمی فرۆشگا",
     admin: "بەڕێوەبەر",
-    cashier: "کاشێر",
     english: "English",
     kurdish: "کوردی",
 
