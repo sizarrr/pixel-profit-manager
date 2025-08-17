@@ -1,6 +1,7 @@
 import Product from "../models/Product.js";
 import { catchAsync, AppError } from "../middleware/errorHandler.js";
 import config from "../config/config.js";
+import mongoose from "mongoose";
 
 // Helper function to parse sort parameter
 const parseSort = (sortStr) => {
@@ -137,6 +138,11 @@ export const getAllProducts = catchAsync(async (req, res, next) => {
 
 // Get single product by ID
 export const getProduct = catchAsync(async (req, res, next) => {
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return next(new AppError("Invalid product ID format", 400));
+  }
+
   const product = await Product.findById(req.params.id);
 
   if (!product || !product.isActive) {
@@ -154,6 +160,10 @@ export const getProduct = catchAsync(async (req, res, next) => {
 // Get product by barcode
 export const getProductByBarcode = catchAsync(async (req, res, next) => {
   const { barcode } = req.params;
+
+  if (!barcode || barcode.trim() === "") {
+    return next(new AppError("Barcode is required", 400));
+  }
 
   const product = await Product.findOne({
     barcode: barcode.trim(),
@@ -174,104 +184,349 @@ export const getProductByBarcode = catchAsync(async (req, res, next) => {
 
 // Create new product
 export const createProduct = catchAsync(async (req, res, next) => {
-  const productData = {
-    ...req.body,
-    lowStockThreshold:
-      req.body.lowStockThreshold || config.defaultLowStockThreshold,
-  };
+  try {
+    const productData = {
+      ...req.body,
+      lowStockThreshold:
+        req.body.lowStockThreshold || config.defaultLowStockThreshold,
+    };
 
-  // If barcode is provided, check for uniqueness
-  if (productData.barcode) {
-    const existingProduct = await Product.findOne({
-      barcode: productData.barcode.trim(),
-      isActive: true,
+    // Enhanced barcode validation
+    if (productData.barcode) {
+      const trimmedBarcode = productData.barcode.toString().trim();
+
+      if (trimmedBarcode === "") {
+        return next(
+          new AppError("Barcode cannot be empty or just whitespace", 400)
+        );
+      }
+
+      const existingProduct = await Product.findOne({
+        barcode: trimmedBarcode,
+        isActive: true,
+      });
+
+      if (existingProduct) {
+        return next(
+          new AppError("Product with this barcode already exists", 400)
+        );
+      }
+
+      productData.barcode = trimmedBarcode;
+    }
+
+    // Validate prices
+    if (
+      productData.buyPrice !== undefined &&
+      productData.sellPrice !== undefined
+    ) {
+      const buyPrice = parseFloat(productData.buyPrice);
+      const sellPrice = parseFloat(productData.sellPrice);
+
+      if (isNaN(buyPrice) || isNaN(sellPrice)) {
+        return next(new AppError("Invalid price values", 400));
+      }
+
+      if (sellPrice < buyPrice) {
+        return next(
+          new AppError(
+            "Sell price must be greater than or equal to buy price",
+            400
+          )
+        );
+      }
+    }
+
+    const product = await Product.create(productData);
+
+    res.status(201).json({
+      status: "success",
+      data: {
+        product,
+      },
     });
+  } catch (error) {
+    console.error("Product creation error:", error);
 
-    if (existingProduct) {
+    // Handle specific MongoDB errors
+    if (error.name === "ValidationError") {
+      const message = Object.values(error.errors)
+        .map((err) => err.message)
+        .join(", ");
+      return next(new AppError(`Validation Error: ${message}`, 400));
+    }
+
+    if (error.code === 11000) {
       return next(
         new AppError("Product with this barcode already exists", 400)
       );
     }
+
+    return next(new AppError("Failed to create product", 500));
   }
-
-  const product = await Product.create(productData);
-
-  res.status(201).json({
-    status: "success",
-    data: {
-      product,
-    },
-  });
 });
 
-// Update product
+// COMPLETELY REWRITTEN Update product function
 export const updateProduct = catchAsync(async (req, res, next) => {
-  // Remove fields that shouldn't be updated directly
-  const allowedFields = [
-    "name",
-    "category",
-    "buyPrice",
-    "sellPrice",
-    "quantity",
-    "description",
-    "image",
-    "barcode",
-    "lowStockThreshold",
-  ];
+  console.log("=== UPDATE PRODUCT START ===");
+  console.log("Product ID:", req.params.id);
+  console.log("Raw Request Body:", JSON.stringify(req.body, null, 2));
+  console.log("Content-Type:", req.headers["content-type"]);
 
-  const updateData = {};
-  allowedFields.forEach((field) => {
-    if (req.body[field] !== undefined) {
-      updateData[field] = req.body[field];
+  try {
+    // 1. Validate ObjectId format first
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log("❌ Invalid ObjectId format");
+      return next(new AppError("Invalid product ID format", 400));
     }
-  });
 
-  // If updating barcode, check for uniqueness
-  if (updateData.barcode) {
-    const existingProduct = await Product.findOne({
-      barcode: updateData.barcode.trim(),
-      isActive: true,
-      _id: { $ne: req.params.id },
+    // 2. Find existing product
+    const existingProduct = await Product.findById(req.params.id);
+    console.log("Existing product found:", !!existingProduct);
+
+    if (!existingProduct) {
+      console.log("❌ Product not found");
+      return next(new AppError("Product not found", 404));
+    }
+
+    if (!existingProduct.isActive) {
+      console.log("❌ Product is not active");
+      return next(new AppError("Product not found", 404));
+    }
+
+    console.log("✅ Existing product:", {
+      id: existingProduct._id,
+      name: existingProduct.name,
+      buyPrice: existingProduct.buyPrice,
+      sellPrice: existingProduct.sellPrice,
+      barcode: existingProduct.barcode,
     });
 
-    if (existingProduct) {
-      return next(
-        new AppError("Product with this barcode already exists", 400)
-      );
-    }
-  }
+    // 3. Build update data - ONLY include fields that are actually changing
+    const updateData = {};
 
-  // Validate sell price vs buy price if both are being updated
-  if (updateData.sellPrice && updateData.buyPrice) {
-    if (updateData.sellPrice < updateData.buyPrice) {
+    // List of fields that can be updated
+    const allowedFields = [
+      "name",
+      "category",
+      "buyPrice",
+      "sellPrice",
+      "quantity",
+      "description",
+      "image",
+      "barcode",
+      "lowStockThreshold",
+    ];
+
+    // Only add fields that are present and different
+    allowedFields.forEach((field) => {
+      if (req.body.hasOwnProperty(field)) {
+        const newValue = req.body[field];
+        const oldValue = existingProduct[field];
+
+        // Handle different field types appropriately
+        if (field === "buyPrice" || field === "sellPrice") {
+          const newNum = parseFloat(newValue);
+          const oldNum = parseFloat(oldValue);
+          if (!isNaN(newNum) && newNum !== oldNum) {
+            updateData[field] = newNum;
+          }
+        } else if (field === "quantity" || field === "lowStockThreshold") {
+          const newNum = parseInt(newValue);
+          const oldNum = parseInt(oldValue);
+          if (!isNaN(newNum) && newNum !== oldNum) {
+            updateData[field] = newNum;
+          }
+        } else if (field === "barcode") {
+          // Special handling for barcode
+          const newBarcode =
+            newValue === null || newValue === ""
+              ? null
+              : String(newValue).trim();
+          if (newBarcode !== oldValue) {
+            updateData[field] = newBarcode;
+          }
+        } else {
+          // String fields
+          const newStr = newValue === null ? null : String(newValue).trim();
+          if (newStr !== oldValue) {
+            updateData[field] = newStr;
+          }
+        }
+      }
+    });
+
+    console.log("📝 Fields to update:", Object.keys(updateData));
+    console.log("📝 Update data:", updateData);
+
+    // 4. Validate barcode if it's being changed
+    if (updateData.hasOwnProperty("barcode")) {
+      console.log("🔍 Validating barcode change...");
+
+      if (updateData.barcode === null || updateData.barcode === "") {
+        console.log("✅ Removing barcode (set to null)");
+        updateData.barcode = null;
+      } else {
+        const trimmedBarcode = String(updateData.barcode).trim();
+
+        if (trimmedBarcode === "") {
+          console.log("❌ Barcode cannot be just whitespace");
+          return next(
+            new AppError("Barcode cannot be empty or just whitespace", 400)
+          );
+        }
+
+        // Check for barcode uniqueness only if it's different from current
+        if (trimmedBarcode !== existingProduct.barcode) {
+          console.log("🔍 Checking barcode uniqueness for:", trimmedBarcode);
+
+          const duplicateProduct = await Product.findOne({
+            barcode: trimmedBarcode,
+            isActive: true,
+            _id: { $ne: req.params.id },
+          });
+
+          if (duplicateProduct) {
+            console.log("❌ Duplicate barcode found");
+            return next(
+              new AppError("Product with this barcode already exists", 400)
+            );
+          }
+        }
+
+        updateData.barcode = trimmedBarcode;
+      }
+    }
+
+    // 5. Validate prices
+    const finalBuyPrice = updateData.hasOwnProperty("buyPrice")
+      ? parseFloat(updateData.buyPrice)
+      : parseFloat(existingProduct.buyPrice);
+    const finalSellPrice = updateData.hasOwnProperty("sellPrice")
+      ? parseFloat(updateData.sellPrice)
+      : parseFloat(existingProduct.sellPrice);
+
+    console.log("💰 Price validation:", { finalBuyPrice, finalSellPrice });
+
+    if (isNaN(finalBuyPrice) || isNaN(finalSellPrice)) {
+      console.log("❌ Invalid price values");
+      return next(new AppError("Invalid price values", 400));
+    }
+
+    if (finalSellPrice < finalBuyPrice) {
+      console.log("❌ Sell price lower than buy price");
       return next(
         new AppError(
-          "Sell price must be greater than or equal to buy price",
+          `Sell price ($${finalSellPrice}) must be greater than or equal to buy price ($${finalBuyPrice})`,
           400
         )
       );
     }
+
+    // 6. Validate quantity if being updated
+    if (updateData.hasOwnProperty("quantity")) {
+      const quantity = parseInt(updateData.quantity);
+      if (isNaN(quantity) || quantity < 0) {
+        console.log("❌ Invalid quantity");
+        return next(
+          new AppError("Quantity must be a non-negative number", 400)
+        );
+      }
+    }
+
+    // 7. If no fields to update, return current product
+    if (Object.keys(updateData).length === 0) {
+      console.log("⚠️ No fields to update");
+      return res.status(200).json({
+        status: "success",
+        data: {
+          product: existingProduct,
+        },
+      });
+    }
+
+    // 8. Perform the update
+    console.log("🚀 Performing database update...");
+    console.log("Update query:", { _id: req.params.id });
+    console.log("Update data:", updateData);
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData }, // Use $set explicitly
+      {
+        new: true, // Return updated document
+        runValidators: true, // Run schema validations
+        context: "query", // Set context for validators
+      }
+    );
+
+    if (!updatedProduct) {
+      console.log("❌ Product not found after update");
+      return next(new AppError("Product not found", 404));
+    }
+
+    console.log("✅ Product updated successfully");
+    console.log("Updated product:", {
+      id: updatedProduct._id,
+      name: updatedProduct.name,
+      buyPrice: updatedProduct.buyPrice,
+      sellPrice: updatedProduct.sellPrice,
+      quantity: updatedProduct.quantity,
+      barcode: updatedProduct.barcode,
+    });
+
+    // 9. Return success response
+    res.status(200).json({
+      status: "success",
+      data: {
+        product: updatedProduct,
+      },
+    });
+  } catch (error) {
+    console.error("=== PRODUCT UPDATE ERROR ===");
+    console.error("Error type:", error.constructor.name);
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error code:", error.code);
+    console.error("Error stack:", error.stack);
+
+    // Handle specific errors
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      console.log("❌ Validation errors:", messages);
+      return next(
+        new AppError(`Validation Error: ${messages.join(", ")}`, 400)
+      );
+    }
+
+    if (error.name === "MongoServerError" && error.code === 11000) {
+      console.log("❌ Duplicate key error");
+      return next(new AppError("Duplicate field value detected", 400));
+    }
+
+    if (error.name === "CastError") {
+      console.log("❌ Cast error");
+      return next(new AppError(`Invalid ${error.path}: ${error.value}`, 400));
+    }
+
+    if (error.name === "MongooseError") {
+      console.log("❌ Mongoose error");
+      return next(new AppError("Database operation failed", 500));
+    }
+
+    // Generic error
+    console.log("❌ Unexpected error");
+    return next(new AppError("Failed to update product", 500));
   }
-
-  const product = await Product.findByIdAndUpdate(req.params.id, updateData, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!product || !product.isActive) {
-    return next(new AppError("Product not found", 404));
-  }
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      product,
-    },
-  });
 });
 
 // Delete product (soft delete)
 export const deleteProduct = catchAsync(async (req, res, next) => {
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return next(new AppError("Invalid product ID format", 400));
+  }
+
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { isActive: false },
@@ -319,6 +574,11 @@ export const getCategories = catchAsync(async (req, res, next) => {
 
 // Update product quantity (for inventory management)
 export const updateQuantity = catchAsync(async (req, res, next) => {
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return next(new AppError("Invalid product ID format", 400));
+  }
+
   const { quantity, operation = "set" } = req.body;
 
   if (!quantity && quantity !== 0) {

@@ -3,7 +3,7 @@ import axios from "axios";
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: "/api/v1",
-  timeout: 10000,
+  timeout: 30000, // Increased timeout for update operations
   headers: {
     "Content-Type": "application/json",
   },
@@ -12,10 +12,16 @@ const api = axios.create({
 // Request interceptor for logging and auth
 api.interceptors.request.use(
   (config) => {
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(
+      `🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`
+    );
+    if (config.data) {
+      console.log("📤 Request Data:", JSON.stringify(config.data, null, 2));
+    }
     return config;
   },
   (error) => {
+    console.error("❌ Request Error:", error);
     return Promise.reject(error);
   }
 );
@@ -23,6 +29,12 @@ api.interceptors.request.use(
 // Response interceptor to transform backend response format
 api.interceptors.response.use(
   (response) => {
+    console.log(
+      `✅ API Response: ${response.config.method?.toUpperCase()} ${
+        response.config.url
+      } - ${response.status}`
+    );
+
     // Transform backend response to match frontend expectations
     if (response.data && response.data.status === "success") {
       return {
@@ -32,6 +44,7 @@ api.interceptors.response.use(
           data:
             response.data.data?.product ||
             response.data.data?.products ||
+            response.data.data ||
             response.data.data,
           message: response.data.message,
         },
@@ -40,17 +53,48 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error("API Error:", error.response?.data || error.message);
+    console.error("❌ API Error Details:");
+    console.error("Status:", error.response?.status);
+    console.error("Status Text:", error.response?.statusText);
+    console.error("Response Data:", error.response?.data);
+    console.error("Request URL:", error.config?.url);
+    console.error("Request Method:", error.config?.method);
+    console.error("Request Data:", error.config?.data);
 
-    // Transform error response
+    // Transform error response to be more informative
     if (error.response?.data) {
       const errorData = error.response.data;
-      error.response.data = {
-        success: false,
-        message: errorData.message || "An error occurred",
-        error: errorData.error,
+
+      // Create a detailed error object
+      const transformedError = {
+        ...error,
+        response: {
+          ...error.response,
+          data: {
+            success: false,
+            message:
+              errorData.message ||
+              errorData.error ||
+              `HTTP ${error.response.status} Error`,
+            error: errorData.error,
+            statusCode: error.response.status,
+            details: errorData.details || errorData.stack,
+          },
+        },
       };
+
+      return Promise.reject(transformedError);
     }
+
+    // Network or other errors
+    error.response = {
+      data: {
+        success: false,
+        message: error.message || "Network error occurred",
+        error: "NETWORK_ERROR",
+        statusCode: 0,
+      },
+    };
 
     return Promise.reject(error);
   }
@@ -114,40 +158,30 @@ export interface DashboardOverview {
   }>;
 }
 
-// Barcode Utility Functions - ADD THESE HERE
+// Barcode Utility Functions
 export const barcodeUtils = {
-  // Validate barcode format
   validateBarcode: (barcode: string): boolean => {
     if (!barcode || typeof barcode !== "string") return false;
-
     const trimmed = barcode.trim();
-
-    // Common barcode formats: UPC (12 digits), EAN (13 digits), Code128 (variable)
-    // Allow 6-20 alphanumeric characters to be flexible
-    return /^[a-zA-Z0-9]{6,20}$/.test(trimmed);
+    return /^[a-zA-Z0-9\-_]{6,50}$/.test(trimmed);
   },
 
-  // Format barcode for display
   formatBarcode: (barcode: string): string => {
     if (!barcode) return "";
     return barcode.trim().toUpperCase();
   },
 
-  // Check if string looks like a barcode (for auto-detection)
   isBarcodeLike: (input: string): boolean => {
     if (!input || typeof input !== "string") return false;
     const trimmed = input.trim();
-
-    // Consider it barcode-like if it's 8+ digits or alphanumeric 8+ chars
     return /^\d{8,}$/.test(trimmed) || /^[a-zA-Z0-9]{8,}$/.test(trimmed);
   },
 
-  // Clean barcode input (remove special chars, spaces, etc.)
   cleanBarcode: (barcode: string): string => {
     if (!barcode) return "";
     return barcode
       .trim()
-      .replace(/[^a-zA-Z0-9]/g, "")
+      .replace(/[^a-zA-Z0-9\-_]/g, "")
       .toUpperCase();
   },
 };
@@ -167,7 +201,6 @@ export const apiService = {
       const response = await api.get("/products", { params });
       console.log("✅ Products fetched:", response.data);
 
-      // Handle the nested products array from backend
       if (response.data.success && response.data.data) {
         return {
           success: true,
@@ -205,7 +238,7 @@ export const apiService = {
       // Clean up the product data before sending
       const cleanProduct = {
         ...product,
-        barcode: product.barcode?.trim() || undefined, // Remove empty strings
+        barcode: product.barcode?.trim() || undefined,
       };
 
       // Validate barcode if provided
@@ -216,7 +249,7 @@ export const apiService = {
         throw new Error("Invalid barcode format");
       }
 
-      // Remove undefined values to prevent backend issues
+      // Remove undefined values
       Object.keys(cleanProduct).forEach((key) => {
         if (cleanProduct[key] === undefined) {
           delete cleanProduct[key];
@@ -224,38 +257,141 @@ export const apiService = {
       });
 
       const response = await api.post("/products", cleanProduct);
-      console.log("✅ Product created, raw response:", response.data);
+      console.log("✅ Product created successfully");
 
       return response.data;
     } catch (error) {
       console.error("❌ Error creating product:", error);
-      console.error("Error details:", {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-      });
       throw error;
     }
   },
 
   async updateProduct(id: string, product: Partial<Product>) {
     try {
-      // Validate barcode if being updated
-      if (product.barcode && !barcodeUtils.validateBarcode(product.barcode)) {
-        throw new Error("Invalid barcode format");
+      console.log("🔄 Updating product:", id);
+      console.log("📝 Update data:", product);
+
+      // Validate ID format
+      if (!id || typeof id !== "string" || id.trim() === "") {
+        throw new Error("Invalid product ID");
       }
 
-      const response = await api.put(`/products/${id}`, product);
+      // Clean and validate the update data
+      const cleanProduct: any = {};
+
+      // Only include defined values and clean them appropriately
+      Object.keys(product).forEach((key) => {
+        const value = product[key];
+
+        if (value !== undefined && value !== null) {
+          switch (key) {
+            case "name":
+            case "category":
+            case "description":
+              // String fields - trim and validate length
+              if (typeof value === "string") {
+                const trimmed = value.trim();
+                if (trimmed.length > 0) {
+                  cleanProduct[key] = trimmed;
+                }
+              }
+              break;
+
+            case "buyPrice":
+            case "sellPrice":
+              // Price fields - ensure they're valid numbers
+              const numValue =
+                typeof value === "string" ? parseFloat(value) : Number(value);
+              if (!isNaN(numValue) && numValue >= 0) {
+                cleanProduct[key] = Math.round(numValue * 100) / 100; // Round to 2 decimals
+              }
+              break;
+
+            case "quantity":
+            case "lowStockThreshold":
+              // Integer fields
+              const intValue =
+                typeof value === "string" ? parseInt(value) : Number(value);
+              if (!isNaN(intValue) && intValue >= 0) {
+                cleanProduct[key] = intValue;
+              }
+              break;
+
+            case "barcode":
+              // Special handling for barcode - can be empty string, null, or valid barcode
+              if (value === "" || value === null) {
+                cleanProduct[key] = null;
+              } else if (typeof value === "string") {
+                const trimmed = value.trim();
+                if (trimmed === "") {
+                  cleanProduct[key] = null;
+                } else {
+                  // Validate barcode format
+                  if (barcodeUtils.validateBarcode(trimmed)) {
+                    cleanProduct[key] = trimmed;
+                  } else {
+                    throw new Error("Invalid barcode format");
+                  }
+                }
+              }
+              break;
+
+            case "isActive":
+              // Boolean field
+              cleanProduct[key] = Boolean(value);
+              break;
+
+            default:
+              // For any other fields, include as-is if they're not undefined/null
+              cleanProduct[key] = value;
+          }
+        } else if (key === "barcode" && (value === null || value === "")) {
+          // Special case: explicitly setting barcode to null/empty
+          cleanProduct[key] = null;
+        }
+      });
+
+      console.log("🧹 Cleaned update data:", cleanProduct);
+
+      // Validate prices relationship if both are being updated or one is being updated
+      if (
+        cleanProduct.buyPrice !== undefined ||
+        cleanProduct.sellPrice !== undefined
+      ) {
+        // We can't validate the relationship here without knowing the current values
+        // The backend will handle this validation
+      }
+
+      // Make sure we have at least one field to update
+      if (Object.keys(cleanProduct).length === 0) {
+        console.log("⚠️ No valid fields to update");
+        throw new Error("No valid fields to update");
+      }
+
+      const response = await api.put(`/products/${id}`, cleanProduct);
+      console.log("✅ Product updated successfully");
+
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error updating product:", error);
+
+      // Re-throw with more context
+      if (error.response?.data?.message) {
+        const enhancedError = new Error(error.response.data.message);
+        enhancedError.response = error.response;
+        throw enhancedError;
+      }
+
       throw error;
     }
   },
 
   async deleteProduct(id: string) {
     try {
+      console.log("🗑️ Deleting product:", id);
       const response = await api.delete(`/products/${id}`);
+      console.log("✅ Product deleted successfully");
+
       return {
         success: true,
         message: "Product deleted successfully",
@@ -290,7 +426,6 @@ export const apiService = {
     try {
       console.log("🔍 API: Searching for barcode:", barcode);
 
-      // Clean and validate barcode
       const cleanedBarcode = barcodeUtils.cleanBarcode(barcode);
       if (!barcodeUtils.validateBarcode(cleanedBarcode)) {
         throw new Error("Invalid barcode format");
@@ -304,7 +439,6 @@ export const apiService = {
     } catch (error) {
       console.error("❌ API: Error fetching product by barcode:", error);
 
-      // If it's a 404, return a structured response instead of throwing
       if (error.response?.status === 404) {
         return {
           success: false,
@@ -320,7 +454,6 @@ export const apiService = {
     try {
       console.log("🔍 API: Searching products with query:", query);
 
-      // Use the search endpoint with proper encoding
       const response = await api.get(
         `/products/search?query=${encodeURIComponent(query)}`
       );
@@ -344,7 +477,6 @@ export const apiService = {
     try {
       const response = await api.get("/sales", { params });
 
-      // Handle the nested sales array from backend
       if (response.data.success && response.data.data) {
         return {
           success: true,
@@ -419,14 +551,10 @@ export const apiService = {
     try {
       console.log("🔍 Fetching dashboard overview...");
       const response = await api.get("/dashboard/overview");
-      console.log("📊 Dashboard raw response:", response.data);
 
-      // Transform dashboard response to handle your backend structure
       if (response.data && response.data.status === "success") {
         const data = response.data.data;
-        console.log("📈 Dashboard data structure:", data);
 
-        // Safely extract data with fallbacks
         const transformedData = {
           totalProducts: data.products?.totalProducts || 0,
           totalSales: data.sales?.period?.totalSales || 0,
@@ -443,15 +571,12 @@ export const apiService = {
             : [],
         };
 
-        console.log("✅ Transformed dashboard data:", transformedData);
-
         return {
           success: true,
           data: transformedData,
         };
       }
 
-      console.warn("⚠️ Dashboard response missing expected structure");
       return {
         success: true,
         data: {
@@ -468,13 +593,7 @@ export const apiService = {
       };
     } catch (error) {
       console.error("❌ Error fetching dashboard overview:", error);
-      console.error("🔍 Error details:", {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-      });
 
-      // Return safe fallback data instead of throwing
       return {
         success: true,
         data: {

@@ -84,7 +84,7 @@ const Products = () => {
               className="flex items-center gap-2"
             >
               <Settings className="w-4 h-4" />
-              Bulk Actions ({selectedProducts.length})
+              {t("bulk_actions")} ({selectedProducts.length})
             </Button>
           )}
           <Button
@@ -117,7 +117,7 @@ const Products = () => {
                   variant="outline"
                   className="text-orange-700 border-orange-300"
                 >
-                  {product.name} ({product.quantity} left)
+                  {product.name} ({product.quantity} {t("left")})
                 </Badge>
               ))}
             </div>
@@ -172,17 +172,17 @@ const Products = () => {
                   onCheckedChange={handleSelectAll}
                 />
                 <span className="text-sm font-medium">
-                  Select All Products ({filteredProducts.length})
+                  {t("select_all_products")} ({filteredProducts.length})
                 </span>
                 {selectedProducts.length > 0 && (
                   <span className="text-sm text-gray-600">
-                    - {selectedProducts.length} selected
+                    - {selectedProducts.length} {t("selected")}
                   </span>
                 )}
               </div>
               {selectedProducts.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={clearSelection}>
-                  Clear Selection
+                  {t("clear_selection")}
                 </Button>
               )}
             </div>

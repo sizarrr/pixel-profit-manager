@@ -1,5 +1,6 @@
 import React from "react";
 import { useStore } from "@/contexts/StoreContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DollarSign,
@@ -13,6 +14,7 @@ import {
 const StatsCards = () => {
   const { products, getTodaysSales, getMonthlyStats, loading, error } =
     useStore();
+  const { t } = useLanguage();
 
   // Safety checks and default values
   const safeProducts = Array.isArray(products) ? products : [];
@@ -30,33 +32,33 @@ const StatsCards = () => {
 
   const stats = [
     {
-      title: "Today's Sales",
+      title: t("total_sales_today"),
       value: `$${todaysSales.toLocaleString()}`,
-      change: "+12%",
+      change: t("change_positive"),
       changeType: "positive" as const,
       icon: DollarSign,
       color: "bg-green-500",
     },
     {
-      title: "Monthly Sales",
+      title: t("monthly_sales"),
       value: `$${monthlyStats.sales.toLocaleString()}`,
-      change: "+8%",
+      change: t("change_monthly_sales"),
       changeType: "positive" as const,
       icon: ShoppingCart,
       color: "bg-blue-500",
     },
     {
-      title: "Monthly Profit",
+      title: t("total_profit"),
       value: `$${monthlyStats.profit.toLocaleString()}`,
-      change: "+15%",
+      change: t("change_monthly_profit"),
       changeType: "positive" as const,
       icon: TrendingUp,
       color: "bg-purple-500",
     },
     {
-      title: "Products in Stock",
+      title: t("products_in_stock"),
       value: totalProducts.toString(),
-      change: `$${totalValue.toLocaleString()} value`,
+      change: `$${totalValue.toLocaleString()} ${t("value")}`,
       changeType: "neutral" as const,
       icon: Package,
       color: "bg-orange-500",
@@ -100,7 +102,9 @@ const StatsCards = () => {
             <CardContent>
               <div className="text-2xl font-bold text-gray-400">--</div>
               <div className="flex items-center mt-2">
-                <span className="text-sm text-red-500">Error loading data</span>
+                <span className="text-sm text-red-500">
+                  {t("error_loading_data")}
+                </span>
               </div>
             </CardContent>
           </Card>

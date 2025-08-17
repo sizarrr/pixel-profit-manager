@@ -66,7 +66,7 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
         buyPrice: Number(data.buyPrice),
         sellPrice: Number(data.sellPrice),
         quantity: Number(data.quantity),
-        barcode: data.barcode.trim() || undefined, // Include barcode, make empty string undefined
+        barcode: data.barcode.trim() || undefined,
         description: data.description,
         lowStockThreshold: Number(data.lowStockThreshold),
       });
@@ -104,7 +104,7 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
                 <FormItem>
                   <FormLabel>{t("product_name")}</FormLabel>
                   <FormControl>
-                    <Input placeholder={`${t("product_name")}`} {...field} />
+                    <Input placeholder={t("enter_product_name")} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -134,10 +134,12 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
               name="barcode"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Barcode (Optional)</FormLabel>
+                  <FormLabel>
+                    {t("barcode")} ({t("optional")})
+                  </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Enter or scan barcode"
+                      placeholder={t("enter_scan_barcode")}
                       {...field}
                       onKeyDown={(e) => {
                         // Handle barcode scanner input (typically ends with Enter)
@@ -202,7 +204,7 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
                   validate: (value) => {
                     const buyPrice = form.getValues("buyPrice");
                     return (
-                      value >= buyPrice || "Sell price must be >= buy price"
+                      value >= buyPrice || t("sell_price_greater_buy_price")
                     );
                   },
                 }}
@@ -257,7 +259,7 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
                 name="lowStockThreshold"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Low Stock Alert</FormLabel>
+                    <FormLabel>{t("low_stock_alert_description")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -282,7 +284,10 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
                 <FormItem>
                   <FormLabel>{t("description")}</FormLabel>
                   <FormControl>
-                    <Input placeholder={t("description")} {...field} />
+                    <Input
+                      placeholder={t("enter_product_description")}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

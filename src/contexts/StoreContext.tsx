@@ -10,7 +10,7 @@ export interface Product {
   quantity: number;
   description: string;
   image?: string;
-  barcode?: string; // New field
+  barcode?: string;
   lowStockThreshold: number;
   isActive: boolean;
   createdAt: Date;
@@ -109,7 +109,7 @@ const convertApiProduct = (apiProduct: ApiProduct): Product => ({
   sellPrice: apiProduct.sellPrice,
   quantity: apiProduct.quantity,
   description: apiProduct.description || "",
-  barcode: apiProduct.barcode, // New field
+  barcode: apiProduct.barcode,
   lowStockThreshold: apiProduct.lowStockThreshold,
   isActive: apiProduct.isActive,
   createdAt: new Date(apiProduct.createdAt),
@@ -137,7 +137,7 @@ const calculateSaleProfit = (sale: Sale, products: Product[]): number => {
       const profit =
         (saleProduct.sellPrice - originalProduct.buyPrice) *
         saleProduct.quantity;
-      return saleProfit + Math.max(0, profit); // Ensure profit is not negative
+      return saleProfit + Math.max(0, profit);
     }
     return saleProfit;
   }, 0);
@@ -170,20 +170,17 @@ const getLast6MonthsData = (
   const now = new Date();
   const monthsData: MonthlyData[] = [];
 
-  // Generate last 6 months including current month
   for (let i = 5; i >= 0; i--) {
     const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const monthName = getMonthName(monthDate);
     const year = monthDate.getFullYear();
     const month = monthDate.getMonth();
 
-    // Filter sales for this month
     const monthSales = sales.filter((sale) => {
       const saleDate = new Date(sale.date);
       return saleDate.getFullYear() === year && saleDate.getMonth() === month;
     });
 
-    // Calculate totals for this month
     const totalSales = monthSales.reduce(
       (sum, sale) => sum + sale.totalAmount,
       0
@@ -194,7 +191,7 @@ const getLast6MonthsData = (
 
     monthsData.push({
       month: monthName,
-      sales: Math.round(totalSales * 100) / 100, // Round to 2 decimal places
+      sales: Math.round(totalSales * 100) / 100,
       profit: Math.round(totalProfit * 100) / 100,
     });
   }
@@ -219,7 +216,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
 
     try {
-      // Load products, sales, and dashboard data in parallel
       const [productsResponse, salesResponse, dashboardResponse] =
         await Promise.all([
           apiService.getProducts(),
@@ -240,7 +236,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         setDashboardData({
           ...data,
           recentSales: data.recentSales.map(convertApiSale),
-          // Ensure monthlySales has proper structure
           monthlySales: data.monthlySales || [],
         });
       }
@@ -270,7 +265,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         sellPrice: productData.sellPrice,
         quantity: productData.quantity,
         description: productData.description,
-        barcode: productData.barcode, // Make sure barcode is included
+        barcode: productData.barcode,
         lowStockThreshold: productData.lowStockThreshold || 5,
         isActive: true,
       });
@@ -287,32 +282,67 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+
   const updateProduct = async (id: string, productData: Partial<Product>) => {
+    console.log("🔄 StoreContext: Updating product", id, productData);
     setLoading(true);
     setError(null);
 
     try {
-      const response = await apiService.updateProduct(id, {
-        name: productData.name,
-        category: productData.category,
-        buyPrice: productData.buyPrice,
-        sellPrice: productData.sellPrice,
-        quantity: productData.quantity,
-        description: productData.description,
-        lowStockThreshold: productData.lowStockThreshold,
-        isActive: productData.isActive,
-      });
+      // Prepare the data for the API call
+      const apiUpdateData: any = {};
 
-      if (response.success) {
+      // Map frontend Product fields to backend fields
+      if (productData.name !== undefined) apiUpdateData.name = productData.name;
+      if (productData.category !== undefined)
+        apiUpdateData.category = productData.category;
+      if (productData.buyPrice !== undefined)
+        apiUpdateData.buyPrice = productData.buyPrice;
+      if (productData.sellPrice !== undefined)
+        apiUpdateData.sellPrice = productData.sellPrice;
+      if (productData.quantity !== undefined)
+        apiUpdateData.quantity = productData.quantity;
+      if (productData.description !== undefined)
+        apiUpdateData.description = productData.description;
+      if (productData.barcode !== undefined)
+        apiUpdateData.barcode = productData.barcode;
+      if (productData.lowStockThreshold !== undefined)
+        apiUpdateData.lowStockThreshold = productData.lowStockThreshold;
+      if (productData.isActive !== undefined)
+        apiUpdateData.isActive = productData.isActive;
+
+      console.log("📤 Sending to API:", apiUpdateData);
+
+      const response = await apiService.updateProduct(id, apiUpdateData);
+
+      if (response.success && response.data) {
+        console.log("✅ API response successful:", response.data);
         const updatedProduct = convertApiProduct(response.data);
-        setProducts((prev) =>
-          prev.map((product) => (product.id === id ? updatedProduct : product))
-        );
+        console.log("✅ Converted product:", updatedProduct);
+
+        setProducts((prev) => {
+          const newProducts = prev.map((product) =>
+            product.id === id ? updatedProduct : product
+          );
+          console.log("✅ Updated products state");
+          return newProducts;
+        });
+      } else {
+        throw new Error("Update response was not successful");
       }
-    } catch (err) {
-      console.error("Error updating product:", err);
-      setError("Failed to update product");
-      throw err;
+    } catch (err: any) {
+      console.error("❌ Error updating product:", err);
+
+      // Extract meaningful error message
+      let errorMessage = "Failed to update product";
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -336,13 +366,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+
   const searchProductByBarcode = async (
     barcode: string
   ): Promise<Product | null> => {
     try {
       console.log("🔍 Searching for barcode:", barcode);
 
-      // First try API search
       const response = await apiService.getProductByBarcode(barcode);
       if (response.success && response.data && response.data.product) {
         console.log("✅ Found product via API:", response.data.product);
@@ -353,7 +383,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      // Fallback to local products search
       const localProduct = products.find(
         (p) =>
           p.barcode === barcode.trim() ||
@@ -366,7 +395,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         return localProduct;
       }
 
-      // If still not found, try searching via regular products API with barcode term
       const searchResponse = await apiService.getProducts({
         search: barcode,
         limit: 1,
@@ -387,6 +415,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("❌ No product found for barcode:", barcode);
     return null;
   };
+
   const addSale = async (
     saleData: Omit<Sale, "id" | "date" | "receiptNumber">
   ) => {
@@ -405,13 +434,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         const newSale = convertApiSale(response.data);
         setSales((prev) => [newSale, ...prev]);
 
-        // Refresh products to get updated quantities
         const productsResponse = await apiService.getProducts();
         if (productsResponse.success) {
           setProducts(productsResponse.data.products.map(convertApiProduct));
         }
 
-        // Refresh dashboard data to update charts
         await refreshDashboardData();
       }
     } catch (err) {
@@ -423,7 +450,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Separate function to refresh dashboard data
   const refreshDashboardData = async () => {
     try {
       const dashboardResponse = await apiService.getDashboardOverview();
@@ -444,7 +470,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     await loadData();
   };
 
-  // These methods work with local data for performance
   const getLowStockProducts = () => {
     return products.filter(
       (product) => product.quantity <= (product.lowStockThreshold || 5)
@@ -471,7 +496,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       0
     );
 
-    // Calculate profit using the helper function
     const totalProfit = monthlySales.reduce((profit, sale) => {
       return profit + calculateSaleProfit(sale, products);
     }, 0);
@@ -505,7 +529,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const getMonthlySalesData = (): MonthlyData[] => {
     try {
-      // First, try to use dashboard data from API
       if (
         dashboardData?.monthlySales &&
         dashboardData.monthlySales.length > 0
@@ -514,16 +537,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         return dashboardData.monthlySales.map((ms) => ({
           month: ms.month,
           sales: ms.revenue || ms.sales || 0,
-          profit: ms.profit || (ms.revenue ? ms.revenue * 0.2 : 0), // Estimate 20% profit margin if not provided
+          profit: ms.profit || (ms.revenue ? ms.revenue * 0.2 : 0),
         }));
       }
 
-      // Fallback to local calculation with improved logic
       console.log("Using local calculation for monthly sales data");
       return getLast6MonthsData(sales, products);
     } catch (error) {
       console.error("Error in getMonthlySalesData:", error);
-      // Return empty data structure to prevent chart crashes
       return [
         { month: "Jan", sales: 0, profit: 0 },
         { month: "Feb", sales: 0, profit: 0 },

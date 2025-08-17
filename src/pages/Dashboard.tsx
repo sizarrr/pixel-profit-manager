@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { useStore } from "@/contexts/StoreContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Loading } from "@/components/ui/loading";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import RecentSales from "@/components/dashboard/RecentSales";
 
 const Dashboard = () => {
   const { loading, error, refreshData } = useStore();
+  const { t } = useLanguage();
 
   // Auto-refresh dashboard data every 30 seconds
   useEffect(() => {
@@ -36,12 +38,17 @@ const Dashboard = () => {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600">Overview of your store performance</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {t("dashboard")}
+            </h1>
+            <p className="text-gray-600">{t("overview")}</p>
           </div>
         </div>
         <div className="flex items-center justify-center py-20">
-          <Loading size="lg" text="Loading dashboard data..." />
+          <Loading
+            size="lg"
+            text={`${t("loading")} ${t("dashboard").toLowerCase()}...`}
+          />
         </div>
       </div>
     );
@@ -52,8 +59,10 @@ const Dashboard = () => {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600">Overview of your store performance</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {t("dashboard")}
+            </h1>
+            <p className="text-gray-600">{t("overview")}</p>
           </div>
           <Button
             onClick={handleManualRefresh}
@@ -61,13 +70,13 @@ const Dashboard = () => {
             className="flex items-center gap-2"
           >
             <RefreshCw className="h-4 w-4" />
-            Retry
+            {t("retry")}
           </Button>
         </div>
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            {error}. Please check your connection and try again.
+            {error}. {t("check_connection")}
           </AlertDescription>
         </Alert>
       </div>
@@ -78,8 +87,8 @@ const Dashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Overview of your store performance</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t("dashboard")}</h1>
+          <p className="text-gray-600">{t("overview")}</p>
         </div>
         <Button
           onClick={handleManualRefresh}
@@ -88,7 +97,7 @@ const Dashboard = () => {
           className="flex items-center gap-2"
         >
           <RefreshCw className="h-4 w-4" />
-          Refresh
+          {t("refresh")}
         </Button>
       </div>
 

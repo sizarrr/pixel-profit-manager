@@ -54,7 +54,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
     if (!confirmDelete) {
       toast({
         title: t("error"),
-        description: "Please confirm the delete operation",
+        description: t("confirm_delete_operation"),
         variant: "destructive",
       });
       return;
@@ -78,20 +78,28 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
 
       // Show results
       if (successCount > 0) {
+        const plural = successCount > 1 ? "s" : "";
         toast({
           title: t("success"),
-          description: `Successfully deleted ${successCount} product${
-            successCount > 1 ? "s" : ""
-          }${failCount > 0 ? `. ${failCount} failed.` : ""}`,
+          description:
+            t("successfully_deleted")
+              .replace("{count}", successCount.toString())
+              .replace("{plural}", plural) +
+            (failCount > 0
+              ? `. ${failCount} ${t("failed_delete")
+                  .replace("{count}", failCount.toString())
+                  .replace("{plural}", failCount > 1 ? "s" : "")}`
+              : ""),
         });
       }
 
       if (failCount > 0 && successCount === 0) {
+        const plural = failCount > 1 ? "s" : "";
         toast({
           title: t("error"),
-          description: `Failed to delete ${failCount} product${
-            failCount > 1 ? "s" : ""
-          }`,
+          description: t("failed_delete")
+            .replace("{count}", failCount.toString())
+            .replace("{plural}", plural),
           variant: "destructive",
         });
       }
@@ -103,7 +111,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
     } catch (error) {
       toast({
         title: t("error"),
-        description: "An unexpected error occurred during bulk delete",
+        description: t("unexpected_error_bulk_delete"),
         variant: "destructive",
       });
     } finally {
@@ -120,7 +128,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
     if (!hasUpdates) {
       toast({
         title: t("error"),
-        description: "Please specify at least one field to update",
+        description: t("specify_field_update"),
         variant: "destructive",
       });
       return;
@@ -194,20 +202,28 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
 
       // Show results
       if (successCount > 0) {
+        const plural = successCount > 1 ? "s" : "";
         toast({
           title: t("success"),
-          description: `Successfully updated ${successCount} product${
-            successCount > 1 ? "s" : ""
-          }${failCount > 0 ? `. ${failCount} failed.` : ""}`,
+          description:
+            t("successfully_updated")
+              .replace("{count}", successCount.toString())
+              .replace("{plural}", plural) +
+            (failCount > 0
+              ? `. ${failCount} ${t("failed_update")
+                  .replace("{count}", failCount.toString())
+                  .replace("{plural}", failCount > 1 ? "s" : "")}`
+              : ""),
         });
       }
 
       if (failCount > 0 && successCount === 0) {
+        const plural = failCount > 1 ? "s" : "";
         toast({
           title: t("error"),
-          description: `Failed to update ${failCount} product${
-            failCount > 1 ? "s" : ""
-          }`,
+          description: t("failed_update")
+            .replace("{count}", failCount.toString())
+            .replace("{plural}", plural),
           variant: "destructive",
         });
       }
@@ -219,7 +235,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
     } catch (error) {
       toast({
         title: t("error"),
-        description: "An unexpected error occurred during bulk update",
+        description: t("unexpected_error_bulk_update"),
         variant: "destructive",
       });
     } finally {
@@ -232,8 +248,8 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>
-            Bulk Operations - {selectedProducts.length} Product
-            {selectedProducts.length > 1 ? "s" : ""} Selected
+            {t("bulk_operations")} - {selectedProducts.length}{" "}
+            {t("products_selected")}
           </DialogTitle>
         </DialogHeader>
 
@@ -247,7 +263,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
               className="flex items-center gap-2"
             >
               <Edit className="w-4 h-4" />
-              Bulk Update
+              {t("bulk_update")}
             </Button>
             <Button
               variant={operation === "delete" ? "destructive" : "outline"}
@@ -256,7 +272,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
               className="flex items-center gap-2"
             >
               <Trash2 className="w-4 h-4" />
-              Bulk Delete
+              {t("bulk_delete")}
             </Button>
           </div>
 
@@ -265,7 +281,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
             <CardContent className="p-4">
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <Package className="w-4 h-4" />
-                Selected Products ({selectedProducts.length})
+                {t("selected_products")} ({selectedProducts.length})
               </h4>
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {selectedProductDetails.length > 0 ? (
@@ -275,7 +291,9 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm text-gray-400">No products found</div>
+                  <div className="text-sm text-gray-400">
+                    {t("no_products_found_selection")}
+                  </div>
                 )}
               </div>
             </CardContent>
@@ -284,14 +302,14 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
           {/* Operation Forms */}
           {operation === "update" && (
             <div className="space-y-4">
-              <h4 className="font-medium">Update Options</h4>
+              <h4 className="font-medium">{t("update_options")}</h4>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="category">New Category</Label>
+                  <Label htmlFor="category">{t("new_category")}</Label>
                   <Input
                     id="category"
-                    placeholder="Leave empty to keep current"
+                    placeholder={t("leave_empty_keep_current")}
                     value={bulkUpdateData.category || ""}
                     onChange={(e) =>
                       setBulkUpdateData((prev) => ({
@@ -304,12 +322,14 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                 </div>
 
                 <div>
-                  <Label htmlFor="lowStockThreshold">Low Stock Threshold</Label>
+                  <Label htmlFor="lowStockThreshold">
+                    {t("low_stock_threshold")}
+                  </Label>
                   <Input
                     id="lowStockThreshold"
                     type="number"
                     min="0"
-                    placeholder="Leave empty to keep current"
+                    placeholder={t("leave_empty_keep_current")}
                     value={bulkUpdateData.lowStockThreshold || ""}
                     onChange={(e) =>
                       setBulkUpdateData((prev) => ({
@@ -327,14 +347,14 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="buyPriceMultiplier">
-                    Buy Price Multiplier
+                    {t("buy_price_multiplier")}
                   </Label>
                   <Input
                     id="buyPriceMultiplier"
                     type="number"
                     step="0.01"
                     min="0.01"
-                    placeholder="e.g., 1.1 for 10% increase"
+                    placeholder={t("price_increase_example")}
                     value={bulkUpdateData.buyPriceMultiplier || ""}
                     onChange={(e) =>
                       setBulkUpdateData((prev) => ({
@@ -350,14 +370,14 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
 
                 <div>
                   <Label htmlFor="sellPriceMultiplier">
-                    Sell Price Multiplier
+                    {t("sell_price_multiplier")}
                   </Label>
                   <Input
                     id="sellPriceMultiplier"
                     type="number"
                     step="0.01"
                     min="0.01"
-                    placeholder="e.g., 1.1 for 10% increase"
+                    placeholder={t("price_increase_example")}
                     value={bulkUpdateData.sellPriceMultiplier || ""}
                     onChange={(e) =>
                       setBulkUpdateData((prev) => ({
@@ -374,9 +394,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-blue-800 text-sm">
-                  💡 <strong>Tip:</strong> Price multipliers will be applied to
-                  existing prices. For example, 1.1 increases prices by 10%, 0.9
-                  decreases by 10%.
+                  💡 <strong>{t("tip")}:</strong> {t("price_multiplier_tip")}
                 </p>
               </div>
             </div>
@@ -386,12 +404,15 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <h4 className="font-medium text-red-800 mb-2">
-                  ⚠️ Soft Delete Warning
+                  ⚠️ {t("soft_delete_warning")}
                 </h4>
                 <p className="text-red-700 text-sm mb-3">
-                  This will mark {selectedProducts.length} product
-                  {selectedProducts.length > 1 ? "s" : ""} as inactive. They
-                  will be hidden from normal views but can be restored later.
+                  {t("products_marked_inactive")
+                    .replace("{count}", selectedProducts.length.toString())
+                    .replace(
+                      "{plural}",
+                      selectedProducts.length > 1 ? "s" : ""
+                    )}
                 </p>
 
                 <div className="flex items-center space-x-2">
@@ -407,7 +428,7 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                     htmlFor="confirmDelete"
                     className="text-red-700 text-sm"
                   >
-                    I understand this will deactivate the selected products
+                    {t("understand_deactivate")}
                   </Label>
                 </div>
               </div>
@@ -422,15 +443,18 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
               onClick={onClose}
               disabled={isProcessing}
             >
-              Cancel
+              {t("cancel")}
             </Button>
             {operation === "update" && (
               <Button onClick={handleBulkUpdate} disabled={isProcessing}>
                 {isProcessing
-                  ? "Updating..."
-                  : `Update ${selectedProducts.length} Product${
-                      selectedProducts.length > 1 ? "s" : ""
-                    }`}
+                  ? t("updating")
+                  : t("update_products_count")
+                      .replace("{count}", selectedProducts.length.toString())
+                      .replace(
+                        "{plural}",
+                        selectedProducts.length > 1 ? "s" : ""
+                      )}
               </Button>
             )}
             {operation === "delete" && (
@@ -440,10 +464,13 @@ const BulkOperationsDialog: React.FC<BulkOperationsDialogProps> = ({
                 disabled={!confirmDelete || isProcessing}
               >
                 {isProcessing
-                  ? "Deleting..."
-                  : `Delete ${selectedProducts.length} Product${
-                      selectedProducts.length > 1 ? "s" : ""
-                    }`}
+                  ? t("deleting")
+                  : t("delete_products_count")
+                      .replace("{count}", selectedProducts.length.toString())
+                      .replace(
+                        "{plural}",
+                        selectedProducts.length > 1 ? "s" : ""
+                      )}
               </Button>
             )}
           </div>

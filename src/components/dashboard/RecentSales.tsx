@@ -1,11 +1,13 @@
 import React from "react";
 import { useStore } from "@/contexts/StoreContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Clock, DollarSign, ShoppingCart } from "lucide-react";
 
 const RecentSales = () => {
   const { sales, loading, error } = useStore();
+  const { t } = useLanguage();
 
   // Safety check: ensure sales is an array before using slice
   const recentSales = Array.isArray(sales) ? sales.slice(0, 5) : [];
@@ -17,13 +19,13 @@ const RecentSales = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" />
-            Recent Sales
+            {t("recent_sales")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <div className="animate-pulse text-gray-500">
-              Loading recent sales...
+              {t("loading_recent_sales")}
             </div>
           </div>
         </CardContent>
@@ -38,12 +40,12 @@ const RecentSales = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" />
-            Recent Sales
+            {t("recent_sales")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8 text-red-500">
-            <p>Error loading sales data</p>
+            <p>{t("error_loading_sales_data")}</p>
             <p className="text-sm text-gray-500 mt-1">{error}</p>
           </div>
         </CardContent>
@@ -56,7 +58,7 @@ const RecentSales = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="w-5 h-5" />
-          Recent Sales
+          {t("recent_sales")}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -79,7 +81,7 @@ const RecentSales = () => {
                           {sale.date.toLocaleTimeString()}
                         </>
                       ) : (
-                        "Date unavailable"
+                        t("date_unavailable")
                       )}
                     </span>
                   </div>
@@ -88,15 +90,15 @@ const RecentSales = () => {
                       ? sale.products
                           .map(
                             (p) =>
-                              `${p.productName || "Unknown Product"} (${
+                              `${p.productName || t("unknown_product")} (${
                                 p.quantity || 0
                               })`
                           )
                           .join(", ")
-                      : "No products"}
+                      : t("no_products")}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
-                    Cashier: {sale.cashierName || "Unknown"}
+                    {t("cashier")}: {sale.cashierName || t("unknown")}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 font-semibold text-green-600">
@@ -108,9 +110,9 @@ const RecentSales = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <ShoppingCart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No recent sales</p>
+              <p>{t("no_recent_sales")}</p>
               <p className="text-sm text-gray-400 mt-1">
-                Sales will appear here once you start making transactions
+                {t("sales_appear_here")}
               </p>
             </div>
           )}
