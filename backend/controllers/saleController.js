@@ -1,5 +1,6 @@
 import Sale from '../models/Sale.js';
 import Product from '../models/Product.js';
+import InventoryBatch from '../models/InventoryBatch.js';
 import { catchAsync, AppError } from '../middleware/errorHandler.js';
 import config from '../config/config.js';
 import mongoose from 'mongoose';
@@ -76,7 +77,7 @@ export const getSale = catchAsync(async (req, res, next) => {
   });
 });
 
-// Create new sale (process transaction)
+// Create new sale (process transaction) with FIFO inventory management
 export const createSale = catchAsync(async (req, res, next) => {
   const session = await mongoose.startSession();
   
@@ -84,8 +85,9 @@ export const createSale = catchAsync(async (req, res, next) => {
     await session.withTransaction(async () => {
       const { products, totalAmount, cashierName, paymentMethod, customerName, notes } = req.body;
 
-      // Validate and check stock availability
-      const productUpdates = [];
+      // Validate and process FIFO inventory allocation
+      const processedProducts = [];
+      const batchUpdates = [];
       let calculatedTotal = 0;
 
       for (const saleProduct of products) {
@@ -95,8 +97,18 @@ export const createSale = catchAsync(async (req, res, next) => {
           throw new AppError(`Product ${saleProduct.productName} not found`, 404);
         }
 
-        if (product.quantity < saleProduct.quantity) {
-          throw new AppError(`Insufficient stock for ${product.name}. Available: ${product.quantity}, Requested: ${saleProduct.quantity}`, 400);
+        // Get available inventory batches in FIFO order
+        const availableBatches = await InventoryBatch.find({
+          productId: saleProduct.productId,
+          remainingQuantity: { $gt: 0 },
+          isActive: true
+        }).sort({ purchaseDate: 1, createdAt: 1 }).session(session);
+
+        // Calculate total available quantity
+        const totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
+        
+        if (totalAvailable < saleProduct.quantity) {
+          throw new AppError(`Insufficient stock for ${product.name}. Available: ${totalAvailable}, Requested: ${saleProduct.quantity}`, 400);
         }
 
         // Verify price and total
@@ -111,11 +123,37 @@ export const createSale = catchAsync(async (req, res, next) => {
 
         calculatedTotal += expectedTotal;
 
-        // Prepare product update
-        productUpdates.push({
-          productId: product._id,
-          newQuantity: product.quantity - saleProduct.quantity
-        });
+        // Allocate inventory using FIFO logic
+        let remainingToAllocate = saleProduct.quantity;
+        const batchAllocations = [];
+
+        for (const batch of availableBatches) {
+          if (remainingToAllocate <= 0) break;
+
+          const allocatedFromBatch = Math.min(remainingToAllocate, batch.remainingQuantity);
+          
+          batchAllocations.push({
+            batchId: batch._id,
+            quantity: allocatedFromBatch,
+            buyPrice: batch.buyPrice,
+            batchNumber: batch.batchNumber
+          });
+
+          batchUpdates.push({
+            batchId: batch._id,
+            newRemainingQuantity: batch.remainingQuantity - allocatedFromBatch
+          });
+
+          remainingToAllocate -= allocatedFromBatch;
+        }
+
+        // Add batch allocation info to the sale product
+        const enhancedSaleProduct = {
+          ...saleProduct,
+          batchAllocations
+        };
+
+        processedProducts.push(enhancedSaleProduct);
       }
 
       // Verify total amount
@@ -123,18 +161,24 @@ export const createSale = catchAsync(async (req, res, next) => {
         throw new AppError('Total amount mismatch', 400);
       }
 
-      // Update product quantities
-      for (const update of productUpdates) {
-        await Product.findByIdAndUpdate(
-          update.productId,
-          { quantity: update.newQuantity },
+      // Update inventory batch quantities
+      for (const update of batchUpdates) {
+        await InventoryBatch.findByIdAndUpdate(
+          update.batchId,
+          { remainingQuantity: update.newRemainingQuantity },
           { session, runValidators: true }
         );
       }
 
-      // Create sale record
+      // Update product total quantities from batches
+      const uniqueProductIds = [...new Set(products.map(p => p.productId))];
+      for (const productId of uniqueProductIds) {
+        await Product.updateQuantityFromBatches(productId);
+      }
+
+      // Create sale record with batch allocation information
       const saleData = {
-        products,
+        products: processedProducts,
         totalAmount,
         cashierName,
         paymentMethod: paymentMethod || 'cash',

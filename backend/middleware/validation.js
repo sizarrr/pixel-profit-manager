@@ -298,3 +298,59 @@ export const validateDateRange = [
 
   handleValidationErrors,
 ];
+
+// Inventory batch validation rules
+export const validateInventoryBatch = [
+  body("productId")
+    .notEmpty()
+    .withMessage("Product ID is required")
+    .isMongoId()
+    .withMessage("Product ID must be a valid MongoDB ObjectId"),
+
+  body("buyPrice")
+    .isNumeric()
+    .withMessage("Buy price must be a number")
+    .isFloat({ min: 0 })
+    .withMessage("Buy price cannot be negative"),
+
+  body("quantity")
+    .isInt({ min: 1 })
+    .withMessage("Quantity must be a positive integer"),
+
+  body("purchaseDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Purchase date must be a valid ISO 8601 date")
+    .custom((value) => {
+      if (new Date(value) > new Date()) {
+        throw new Error("Purchase date cannot be in the future");
+      }
+      return true;
+    }),
+
+  body("expiryDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Expiry date must be a valid ISO 8601 date")
+    .custom((value, { req }) => {
+      const purchaseDate = req.body.purchaseDate || new Date();
+      if (new Date(value) <= new Date(purchaseDate)) {
+        throw new Error("Expiry date must be after purchase date");
+      }
+      return true;
+    }),
+
+  body("supplierName")
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage("Supplier name cannot exceed 100 characters"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];

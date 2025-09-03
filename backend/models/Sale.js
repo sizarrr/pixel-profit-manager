@@ -1,5 +1,28 @@
 import mongoose from 'mongoose';
 
+const batchAllocationSchema = new mongoose.Schema({
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InventoryBatch',
+    required: [true, 'Batch ID is required']
+  },
+  quantity: {
+    type: Number,
+    required: [true, 'Allocated quantity is required'],
+    min: [1, 'Allocated quantity must be at least 1']
+  },
+  buyPrice: {
+    type: Number,
+    required: [true, 'Buy price is required'],
+    min: [0, 'Buy price cannot be negative']
+  },
+  batchNumber: {
+    type: String,
+    required: [true, 'Batch number is required'],
+    trim: true
+  }
+}, { _id: false });
+
 const saleProductSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -25,6 +48,10 @@ const saleProductSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Total is required'],
     min: [0, 'Total cannot be negative']
+  },
+  batchAllocations: {
+    type: [batchAllocationSchema],
+    default: []
   }
 }, { _id: false });
 

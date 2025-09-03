@@ -2,6 +2,7 @@ import express from "express";
 import productRoutes from "./productRoutes.js";
 import saleRoutes from "./saleRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
+import inventoryRoutes from "./inventoryRoutes.js";
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ const router = express.Router();
 router.use("/products", productRoutes);
 router.use("/sales", saleRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/inventory", inventoryRoutes);
 
 // Health check endpoint
 router.get("/health", (req, res) => {
