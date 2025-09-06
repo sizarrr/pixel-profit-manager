@@ -3,6 +3,7 @@ import { apiService, Product as ApiProduct, Sale as ApiSale } from "../lib/api";
 
 export interface Product {
   id: string;
+  _id: string; // Keep original MongoDB _id for backend operations
   name: string;
   category: string;
   buyPrice: number;
@@ -103,6 +104,7 @@ export const useStore = () => {
 // Helper function to convert API product to local product format
 const convertApiProduct = (apiProduct: ApiProduct): Product => ({
   id: apiProduct._id,
+  _id: apiProduct._id, // Keep original MongoDB _id for backend operations
   name: apiProduct.name,
   category: apiProduct.category,
   buyPrice: apiProduct.buyPrice,

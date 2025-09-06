@@ -80,7 +80,7 @@ const Sales = () => {
       }
     } else {
       const newCartItem: CartItem = {
-        productId: product.id,
+        productId: product.id, // This will be the frontend ID, we'll map it back in processSale
         productName: product.name,
         sellPrice: product.sellPrice,
         quantity: 1,
@@ -268,13 +268,17 @@ const Sales = () => {
 
     try {
       const saleData = {
-        products: cart.map((item) => ({
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          sellPrice: item.sellPrice,
-          total: item.sellPrice * item.quantity,
-        })),
+        products: cart.map((item) => {
+          // Find the original product to get the MongoDB _id
+          const originalProduct = products.find(p => p.id === item.productId);
+          return {
+            productId: originalProduct?._id || item.productId, // Use MongoDB _id for backend
+            productName: item.productName,
+            quantity: item.quantity,
+            sellPrice: item.sellPrice,
+            total: item.sellPrice * item.quantity,
+          };
+        }),
         totalAmount: getTotalAmount(),
         cashierName: "Store Manager",
         paymentMethod: "cash",
