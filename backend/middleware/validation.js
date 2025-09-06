@@ -105,7 +105,18 @@ export const validateProductUpdate = [
     .isNumeric()
     .withMessage("Sell price must be a number")
     .isFloat({ min: 0 })
-    .withMessage("Sell price cannot be negative"),
+    .withMessage("Sell price cannot be negative")
+    .custom((value, { req }) => {
+      // Only validate cross-field relationship if both prices are provided
+      if (req.body.buyPrice !== undefined && value !== undefined) {
+        if (parseFloat(value) < parseFloat(req.body.buyPrice)) {
+          throw new Error(
+            "Sell price must be greater than or equal to buy price"
+          );
+        }
+      }
+      return true;
+    }),
 
   body("quantity")
     .optional()
