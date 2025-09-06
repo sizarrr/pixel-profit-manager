@@ -406,7 +406,14 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       ? parseFloat(updateData.sellPrice)
       : parseFloat(existingProduct.sellPrice);
 
-    console.log("💰 Price validation:", { finalBuyPrice, finalSellPrice });
+    console.log("💰 Price validation details:");
+    console.log("  - updateData.buyPrice:", updateData.buyPrice, typeof updateData.buyPrice);
+    console.log("  - updateData.sellPrice:", updateData.sellPrice, typeof updateData.sellPrice);
+    console.log("  - existingProduct.buyPrice:", existingProduct.buyPrice, typeof existingProduct.buyPrice);
+    console.log("  - existingProduct.sellPrice:", existingProduct.sellPrice, typeof existingProduct.sellPrice);
+    console.log("  - finalBuyPrice:", finalBuyPrice, typeof finalBuyPrice);
+    console.log("  - finalSellPrice:", finalSellPrice, typeof finalSellPrice);
+    console.log("  - finalSellPrice < finalBuyPrice:", finalSellPrice < finalBuyPrice);
 
     if (isNaN(finalBuyPrice) || isNaN(finalSellPrice)) {
       console.log("❌ Invalid price values");
