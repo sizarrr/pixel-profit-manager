@@ -170,12 +170,6 @@ export const createSale = catchAsync(async (req, res, next) => {
         );
       }
 
-      // Update product total quantities from batches
-      const uniqueProductIds = [...new Set(products.map(p => p.productId))];
-      for (const productId of uniqueProductIds) {
-        await Product.updateQuantityFromBatches(productId);
-      }
-
       // Create sale record with batch allocation information
       const saleData = {
         products: processedProducts,
@@ -188,10 +182,24 @@ export const createSale = catchAsync(async (req, res, next) => {
 
       const sale = await Sale.create([saleData], { session });
 
+      // Store product IDs for updating quantities after transaction
+      const uniqueProductIds = [...new Set(products.map(p => p.productId))];
+
       res.status(201).json({
         status: 'success',
         data: {
           sale: sale[0]
+        }
+      });
+
+      // Update product total quantities from batches after transaction completes
+      setImmediate(async () => {
+        for (const productId of uniqueProductIds) {
+          try {
+            await Product.updateQuantityFromBatches(productId);
+          } catch (error) {
+            console.error(`Error updating quantity for product ${productId}:`, error);
+          }
         }
       });
     });
