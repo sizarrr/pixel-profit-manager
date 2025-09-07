@@ -447,9 +447,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
 
     try {
+      // Coerce numeric values to avoid 400 on backend due to string numbers
+      const sanitizedProducts = saleData.products.map(p => ({
+        ...p,
+        quantity: Number(p.quantity),
+        sellPrice: Number(p.sellPrice),
+        total: Number(p.total)
+      }));
+
       const response = await apiService.createSale({
-        products: saleData.products,
-        totalAmount: saleData.totalAmount,
+        products: sanitizedProducts,
+        totalAmount: Number(saleData.totalAmount),
         cashierName: saleData.cashierName,
         paymentMethod: saleData.paymentMethod || "cash",
       });
