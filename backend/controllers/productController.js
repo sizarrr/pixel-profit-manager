@@ -267,11 +267,11 @@ export const createProduct = catchAsync(async (req, res, next) => {
 });
 
 // COMPLETELY REWRITTEN Update product function
+// FIXED updateProduct function with corrected price validation
 export const updateProduct = catchAsync(async (req, res, next) => {
   console.log("=== UPDATE PRODUCT START ===");
   console.log("Product ID:", req.params.id);
   console.log("Raw Request Body:", JSON.stringify(req.body, null, 2));
-  console.log("Content-Type:", req.headers["content-type"]);
 
   try {
     // 1. Validate ObjectId format first
@@ -309,7 +309,7 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     const allowedFields = [
       "name",
       "category",
-      "buyPrice",
+      "buyPrice", 
       "sellPrice",
       "quantity",
       "description",
@@ -398,30 +398,38 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       }
     }
 
-    // 5. Validate prices
-    const finalBuyPrice = updateData.hasOwnProperty("buyPrice")
-      ? parseFloat(updateData.buyPrice)
-      : parseFloat(existingProduct.buyPrice);
-    const finalSellPrice = updateData.hasOwnProperty("sellPrice")
-      ? parseFloat(updateData.sellPrice)
-      : parseFloat(existingProduct.sellPrice);
+    // 5. FIXED PRICE VALIDATION - Ensure proper type handling
+    let finalBuyPrice, finalSellPrice;
 
-    console.log("💰 Price validation details:");
-    console.log("  - updateData.buyPrice:", updateData.buyPrice, typeof updateData.buyPrice);
-    console.log("  - updateData.sellPrice:", updateData.sellPrice, typeof updateData.sellPrice);
-    console.log("  - existingProduct.buyPrice:", existingProduct.buyPrice, typeof existingProduct.buyPrice);
-    console.log("  - existingProduct.sellPrice:", existingProduct.sellPrice, typeof existingProduct.sellPrice);
-    console.log("  - finalBuyPrice:", finalBuyPrice, typeof finalBuyPrice);
-    console.log("  - finalSellPrice:", finalSellPrice, typeof finalSellPrice);
-    console.log("  - finalSellPrice < finalBuyPrice:", finalSellPrice < finalBuyPrice);
+    // Determine final prices after update
+    if (updateData.hasOwnProperty("buyPrice")) {
+      finalBuyPrice = parseFloat(updateData.buyPrice);
+    } else {
+      finalBuyPrice = parseFloat(existingProduct.buyPrice);
+    }
 
+    if (updateData.hasOwnProperty("sellPrice")) {
+      finalSellPrice = parseFloat(updateData.sellPrice);
+    } else {
+      finalSellPrice = parseFloat(existingProduct.sellPrice);
+    }
+
+    console.log("💰 Price validation:");
+    console.log("  - Final buy price:", finalBuyPrice, typeof finalBuyPrice);
+    console.log("  - Final sell price:", finalSellPrice, typeof finalSellPrice);
+
+    // Validate that prices are numbers
     if (isNaN(finalBuyPrice) || isNaN(finalSellPrice)) {
-      console.log("❌ Invalid price values");
+      console.log("❌ Invalid price values - NaN detected");
+      console.log("  - finalBuyPrice isNaN:", isNaN(finalBuyPrice));
+      console.log("  - finalSellPrice isNaN:", isNaN(finalSellPrice));
       return next(new AppError("Invalid price values", 400));
     }
 
+    // Validate price relationship
     if (finalSellPrice < finalBuyPrice) {
       console.log("❌ Sell price lower than buy price");
+      console.log(`  - Sell: $${finalSellPrice}, Buy: $${finalBuyPrice}`);
       return next(
         new AppError(
           `Sell price ($${finalSellPrice}) must be greater than or equal to buy price ($${finalBuyPrice})`,
@@ -429,6 +437,8 @@ export const updateProduct = catchAsync(async (req, res, next) => {
         )
       );
     }
+
+    console.log("✅ Price validation passed");
 
     // 6. Validate quantity if being updated
     if (updateData.hasOwnProperty("quantity")) {
@@ -454,16 +464,13 @@ export const updateProduct = catchAsync(async (req, res, next) => {
 
     // 8. Perform the update
     console.log("🚀 Performing database update...");
-    console.log("Update query:", { _id: req.params.id });
-    console.log("Update data:", updateData);
 
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      { $set: updateData }, // Use $set explicitly
+      updateData,
       {
-        new: true, // Return updated document
-        runValidators: true, // Run schema validations
-        context: "query", // Set context for validators
+        new: true,
+        runValidators: true,
       }
     );
 
@@ -473,14 +480,6 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     }
 
     console.log("✅ Product updated successfully");
-    console.log("Updated product:", {
-      id: updatedProduct._id,
-      name: updatedProduct.name,
-      buyPrice: updatedProduct.buyPrice,
-      sellPrice: updatedProduct.sellPrice,
-      quantity: updatedProduct.quantity,
-      barcode: updatedProduct.barcode,
-    });
 
     // 9. Return success response
     res.status(200).json({
@@ -491,11 +490,7 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     });
   } catch (error) {
     console.error("=== PRODUCT UPDATE ERROR ===");
-    console.error("Error type:", error.constructor.name);
-    console.error("Error name:", error.name);
-    console.error("Error message:", error.message);
-    console.error("Error code:", error.code);
-    console.error("Error stack:", error.stack);
+    console.error("Error:", error);
 
     // Handle specific errors
     if (error.name === "ValidationError") {
@@ -509,16 +504,6 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     if (error.name === "MongoServerError" && error.code === 11000) {
       console.log("❌ Duplicate key error");
       return next(new AppError("Duplicate field value detected", 400));
-    }
-
-    if (error.name === "CastError") {
-      console.log("❌ Cast error");
-      return next(new AppError(`Invalid ${error.path}: ${error.value}`, 400));
-    }
-
-    if (error.name === "MongooseError") {
-      console.log("❌ Mongoose error");
-      return next(new AppError("Database operation failed", 500));
     }
 
     // Generic error
