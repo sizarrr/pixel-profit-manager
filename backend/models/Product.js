@@ -23,12 +23,8 @@ const productSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Sell price is required"],
       min: [0, "Sell price cannot be negative"],
-      validate: {
-        validator: function (value) {
-          return value >= this.buyPrice;
-        },
-        message: "Sell price must be greater than or equal to buy price",
-      },
+      // Removed Mongoose-level price validation to avoid conflicts with updates
+      // Price validation is handled in the controller layer for better control
     },
     quantity: {
       type: Number,
