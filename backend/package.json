@@ -7,7 +7,17 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:edge-cases": "jest tests/edge-cases",
+    "test:performance": "jest tests/performance",
+    "test:fifo": "node tests/run-fifo-tests.js",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "demo:fifo": "node scripts/demo-fifo-logic.js",
+    "test:inventory": "node scripts/test-fifo-inventory.js"
   },
   "keywords": [
     "express",
@@ -29,6 +39,13 @@
     "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0",
+    "@jest/globals": "^29.7.0",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^9.1.0",
+    "supertest": "^6.3.0"
   }
 }
