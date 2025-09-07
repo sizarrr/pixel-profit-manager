@@ -83,7 +83,24 @@ export const createSale = catchAsync(async (req, res, next) => {
   
   try {
     await session.withTransaction(async () => {
-      const { products, totalAmount, cashierName, paymentMethod, customerName, notes } = req.body;
+      // Coerce numeric fields and sanitize payload
+      const {
+        products: rawProducts,
+        totalAmount: rawTotalAmount,
+        cashierName,
+        paymentMethod,
+        customerName,
+        notes
+      } = req.body;
+
+      const products = Array.isArray(rawProducts) ? rawProducts.map((p) => ({
+        ...p,
+        quantity: Number(p.quantity),
+        sellPrice: Number(p.sellPrice),
+        total: Number(p.total)
+      })) : [];
+
+      const totalAmount = Number(rawTotalAmount);
 
       // Validate and process FIFO inventory allocation
       const processedProducts = [];
@@ -98,21 +115,40 @@ export const createSale = catchAsync(async (req, res, next) => {
         }
 
         // Get available inventory batches in FIFO order
-        const availableBatches = await InventoryBatch.find({
+        let availableBatches = await InventoryBatch.find({
           productId: saleProduct.productId,
           remainingQuantity: { $gt: 0 },
           isActive: true
         }).sort({ purchaseDate: 1, createdAt: 1 }).session(session);
 
-        // Calculate total available quantity
-        const totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
+        // If there are no batches yet but legacy product quantity exists, auto-initialize a batch
+        let totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
+        if (totalAvailable === 0 && Number(product.quantity) > 0) {
+          const initQty = Number(product.quantity);
+          const initBatchData = {
+            productId: product._id,
+            buyPrice: Number(product.buyPrice) || 0,
+            initialQuantity: initQty,
+            remainingQuantity: initQty,
+            purchaseDate: product.createdAt || new Date(),
+            supplierName: 'Legacy stock',
+            notes: 'Auto-created from existing product quantity to initialize FIFO'
+          };
+          await InventoryBatch.create([initBatchData], { session });
+          availableBatches = await InventoryBatch.find({
+            productId: saleProduct.productId,
+            remainingQuantity: { $gt: 0 },
+            isActive: true
+          }).sort({ purchaseDate: 1, createdAt: 1 }).session(session);
+          totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
+        }
         
         if (totalAvailable < saleProduct.quantity) {
           throw new AppError(`Insufficient stock for ${product.name}. Available: ${totalAvailable}, Requested: ${saleProduct.quantity}`, 400);
         }
 
-        // Verify price and total
-        if (saleProduct.sellPrice !== product.sellPrice) {
+        // Verify price and total (allow minor float rounding tolerance)
+        if (Math.abs(Number(saleProduct.sellPrice) - Number(product.sellPrice)) > 0.01) {
           throw new AppError(`Price mismatch for ${product.name}`, 400);
         }
 
@@ -157,7 +193,7 @@ export const createSale = catchAsync(async (req, res, next) => {
       }
 
       // Verify total amount
-      if (Math.abs(totalAmount - calculatedTotal) > 0.01) {
+      if (Math.abs(Number(totalAmount) - calculatedTotal) > 0.01) {
         throw new AppError('Total amount mismatch', 400);
       }
 
