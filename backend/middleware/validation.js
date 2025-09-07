@@ -39,15 +39,8 @@ export const validateProduct = [
     .isNumeric()
     .withMessage("Sell price must be a number")
     .isFloat({ min: 0 })
-    .withMessage("Sell price cannot be negative")
-    .custom((value, { req }) => {
-      if (parseFloat(value) < parseFloat(req.body.buyPrice)) {
-        throw new Error(
-          "Sell price must be greater than or equal to buy price"
-        );
-      }
-      return true;
-    }),
+    .withMessage("Sell price cannot be negative"),
+    // Cross-field validation moved to controller for better error handling
 
   body("quantity")
     .isInt({ min: 0 })
@@ -105,18 +98,9 @@ export const validateProductUpdate = [
     .isNumeric()
     .withMessage("Sell price must be a number")
     .isFloat({ min: 0 })
-    .withMessage("Sell price cannot be negative")
-    .custom((value, { req }) => {
-      // Only validate cross-field relationship if both prices are provided
-      if (req.body.buyPrice !== undefined && value !== undefined) {
-        if (parseFloat(value) < parseFloat(req.body.buyPrice)) {
-          throw new Error(
-            "Sell price must be greater than or equal to buy price"
-          );
-        }
-      }
-      return true;
-    }),
+    .withMessage("Sell price cannot be negative"),
+    // Removed cross-field validation from middleware as it's handled in controller
+    // where we have access to existing product data for proper validation
 
   body("quantity")
     .optional()
