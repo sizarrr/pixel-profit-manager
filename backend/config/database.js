@@ -1,11 +1,22 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+// Optional in-memory MongoDB for development/testing without a local mongod
+// Will only be used when USE_IN_MEMORY_DB=true or MONGODB_URI=memory
+let memoryServerInstance = null;
 
 dotenv.config();
 
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/store-management';
+    let mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/store-management';
+
+    // Enable in-memory DB when explicitly requested
+    if (process.env.USE_IN_MEMORY_DB === 'true' || mongoURI === 'memory') {
+      const { MongoMemoryServer } = await import('mongodb-memory-server');
+      memoryServerInstance = await MongoMemoryServer.create();
+      mongoURI = memoryServerInstance.getUri('store-management');
+      console.log(`🧪 Using in-memory MongoDB instance: ${mongoURI}`);
+    }
     
     const options = {
       // Connection options for better performance and reliability
@@ -36,6 +47,10 @@ const connectDB = async () => {
       try {
         await mongoose.connection.close();
         console.log('📪 MongoDB connection closed through app termination');
+        if (memoryServerInstance) {
+          await memoryServerInstance.stop();
+          console.log('🧪 In-memory MongoDB stopped');
+        }
         process.exit(0);
       } catch (err) {
         console.error('❌ Error during MongoDB shutdown:', err);
