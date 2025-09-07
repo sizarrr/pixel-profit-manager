@@ -80,169 +80,213 @@ export const getSale = catchAsync(async (req, res, next) => {
 // Create new sale (process transaction) with FIFO inventory management
 export const createSale = catchAsync(async (req, res, next) => {
   const session = await mongoose.startSession();
-  
-  try {
-    await session.withTransaction(async () => {
-      // Coerce numeric fields and sanitize payload
-      const {
-        products: rawProducts,
-        totalAmount: rawTotalAmount,
-        cashierName,
-        paymentMethod,
-        customerName,
-        notes
-      } = req.body;
 
-      const products = Array.isArray(rawProducts) ? rawProducts.map((p) => ({
-        ...p,
-        quantity: Number(p.quantity),
-        sellPrice: Number(p.sellPrice),
-        total: Number(p.total)
-      })) : [];
+  // Shared core that can run with or without a MongoDB transaction
+  const processSaleCore = async (activeSession) => {
+    // Coerce numeric fields and sanitize payload
+    const {
+      products: rawProducts,
+      totalAmount: rawTotalAmount,
+      cashierName,
+      paymentMethod,
+      customerName,
+      notes
+    } = req.body;
 
-      const totalAmount = Number(rawTotalAmount);
+    const products = Array.isArray(rawProducts)
+      ? rawProducts.map((p) => ({
+          ...p,
+          quantity: Number(p.quantity),
+          sellPrice: Number(p.sellPrice),
+          total: Number(p.total),
+        }))
+      : [];
 
-      // Validate and process FIFO inventory allocation
-      const processedProducts = [];
-      const batchUpdates = [];
-      let calculatedTotal = 0;
+    const totalAmount = Number(rawTotalAmount);
 
-      for (const saleProduct of products) {
-        const product = await Product.findById(saleProduct.productId).session(session);
-        
-        if (!product || !product.isActive) {
-          throw new AppError(`Product ${saleProduct.productName} not found`, 404);
-        }
+    // Validate and process FIFO inventory allocation
+    const processedProducts = [];
+    const batchUpdates = [];
+    let calculatedTotal = 0;
 
-        // Get available inventory batches in FIFO order
-        let availableBatches = await InventoryBatch.find({
+    for (const saleProduct of products) {
+      const product = await Product.findById(saleProduct.productId).session(activeSession || null);
+
+      if (!product || !product.isActive) {
+        throw new AppError(`Product ${saleProduct.productName} not found`, 404);
+      }
+
+      // Get available inventory batches in FIFO order
+      let availableBatches = await InventoryBatch.find({
+        productId: saleProduct.productId,
+        remainingQuantity: { $gt: 0 },
+        isActive: true,
+      })
+        .sort({ purchaseDate: 1, createdAt: 1 })
+        .session(activeSession || null);
+
+      // If there are no batches yet but legacy product quantity exists, auto-initialize a batch
+      let totalAvailable = availableBatches.reduce(
+        (sum, batch) => sum + batch.remainingQuantity,
+        0
+      );
+      if (totalAvailable === 0 && Number(product.quantity) > 0) {
+        const initQty = Number(product.quantity);
+        const initBatchData = {
+          productId: product._id,
+          buyPrice: Number(product.buyPrice) || 0,
+          initialQuantity: initQty,
+          remainingQuantity: initQty,
+          purchaseDate: product.createdAt || new Date(),
+          supplierName: 'Legacy stock',
+          notes: 'Auto-created from existing product quantity to initialize FIFO',
+        };
+        // Use single-document create so pre-save hooks (e.g., batch number generation) run
+        const createOpts = activeSession ? { session: activeSession } : undefined;
+        await InventoryBatch.create(initBatchData, createOpts);
+        availableBatches = await InventoryBatch.find({
           productId: saleProduct.productId,
           remainingQuantity: { $gt: 0 },
-          isActive: true
-        }).sort({ purchaseDate: 1, createdAt: 1 }).session(session);
-
-        // If there are no batches yet but legacy product quantity exists, auto-initialize a batch
-        let totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
-        if (totalAvailable === 0 && Number(product.quantity) > 0) {
-          const initQty = Number(product.quantity);
-          const initBatchData = {
-            productId: product._id,
-            buyPrice: Number(product.buyPrice) || 0,
-            initialQuantity: initQty,
-            remainingQuantity: initQty,
-            purchaseDate: product.createdAt || new Date(),
-            supplierName: 'Legacy stock',
-            notes: 'Auto-created from existing product quantity to initialize FIFO'
-          };
-          // Use single-document create so pre-save hooks (e.g., batch number generation) run
-          await InventoryBatch.create(initBatchData, { session });
-          availableBatches = await InventoryBatch.find({
-            productId: saleProduct.productId,
-            remainingQuantity: { $gt: 0 },
-            isActive: true
-          }).sort({ purchaseDate: 1, createdAt: 1 }).session(session);
-          totalAvailable = availableBatches.reduce((sum, batch) => sum + batch.remainingQuantity, 0);
-        }
-        
-        if (totalAvailable < saleProduct.quantity) {
-          throw new AppError(`Insufficient stock for ${product.name}. Available: ${totalAvailable}, Requested: ${saleProduct.quantity}`, 400);
-        }
-
-        // Verify price and total (allow minor float rounding tolerance)
-        if (Math.abs(Number(saleProduct.sellPrice) - Number(product.sellPrice)) > 0.01) {
-          throw new AppError(`Price mismatch for ${product.name}`, 400);
-        }
-
-        const expectedTotal = saleProduct.sellPrice * saleProduct.quantity;
-        if (Math.abs(saleProduct.total - expectedTotal) > 0.01) {
-          throw new AppError(`Total mismatch for ${product.name}`, 400);
-        }
-
-        calculatedTotal += expectedTotal;
-
-        // Allocate inventory using FIFO logic
-        let remainingToAllocate = saleProduct.quantity;
-        const batchAllocations = [];
-
-        for (const batch of availableBatches) {
-          if (remainingToAllocate <= 0) break;
-
-          const allocatedFromBatch = Math.min(remainingToAllocate, batch.remainingQuantity);
-          
-          batchAllocations.push({
-            batchId: batch._id,
-            quantity: allocatedFromBatch,
-            buyPrice: batch.buyPrice,
-            batchNumber: batch.batchNumber
-          });
-
-          batchUpdates.push({
-            batchId: batch._id,
-            newRemainingQuantity: batch.remainingQuantity - allocatedFromBatch
-          });
-
-          remainingToAllocate -= allocatedFromBatch;
-        }
-
-        // Add batch allocation info to the sale product
-        const enhancedSaleProduct = {
-          ...saleProduct,
-          batchAllocations
-        };
-
-        processedProducts.push(enhancedSaleProduct);
-      }
-
-      // Verify total amount
-      if (Math.abs(Number(totalAmount) - calculatedTotal) > 0.01) {
-        throw new AppError('Total amount mismatch', 400);
-      }
-
-      // Update inventory batch quantities
-      for (const update of batchUpdates) {
-        await InventoryBatch.findByIdAndUpdate(
-          update.batchId,
-          { remainingQuantity: update.newRemainingQuantity },
-          { session, runValidators: true }
+          isActive: true,
+        })
+          .sort({ purchaseDate: 1, createdAt: 1 })
+          .session(activeSession || null);
+        totalAvailable = availableBatches.reduce(
+          (sum, batch) => sum + batch.remainingQuantity,
+          0
         );
       }
 
-      // Create sale record with batch allocation information
-      const saleData = {
-        products: processedProducts,
-        totalAmount,
-        cashierName,
-        paymentMethod: paymentMethod || 'cash',
-        customerName,
-        notes
+      if (totalAvailable < saleProduct.quantity) {
+        throw new AppError(
+          `Insufficient stock for ${product.name}. Available: ${totalAvailable}, Requested: ${saleProduct.quantity}`,
+          400
+        );
+      }
+
+      // Verify price and total (allow minor float rounding tolerance)
+      if (
+        Math.abs(Number(saleProduct.sellPrice) - Number(product.sellPrice)) >
+        0.01
+      ) {
+        throw new AppError(`Price mismatch for ${product.name}`, 400);
+      }
+
+      const expectedTotal = saleProduct.sellPrice * saleProduct.quantity;
+      if (Math.abs(saleProduct.total - expectedTotal) > 0.01) {
+        throw new AppError(`Total mismatch for ${product.name}`, 400);
+      }
+
+      calculatedTotal += expectedTotal;
+
+      // Allocate inventory using FIFO logic
+      let remainingToAllocate = saleProduct.quantity;
+      const batchAllocations = [];
+
+      for (const batch of availableBatches) {
+        if (remainingToAllocate <= 0) break;
+
+        const allocatedFromBatch = Math.min(
+          remainingToAllocate,
+          batch.remainingQuantity
+        );
+
+        batchAllocations.push({
+          batchId: batch._id,
+          quantity: allocatedFromBatch,
+          buyPrice: batch.buyPrice,
+          batchNumber: batch.batchNumber,
+        });
+
+        batchUpdates.push({
+          batchId: batch._id,
+          newRemainingQuantity: batch.remainingQuantity - allocatedFromBatch,
+        });
+
+        remainingToAllocate -= allocatedFromBatch;
+      }
+
+      // Add batch allocation info to the sale product
+      const enhancedSaleProduct = {
+        ...saleProduct,
+        batchAllocations,
       };
 
-      // Use single-document create so pre-save hooks (e.g., receipt number generation) run
-      const sale = await Sale.create(saleData, { session });
+      processedProducts.push(enhancedSaleProduct);
+    }
 
-      // Store product IDs for updating quantities after transaction
-      const uniqueProductIds = [...new Set(products.map(p => p.productId))];
+    // Verify total amount
+    if (Math.abs(Number(totalAmount) - calculatedTotal) > 0.01) {
+      throw new AppError('Total amount mismatch', 400);
+    }
 
-      res.status(201).json({
-        status: 'success',
-        data: {
-          sale
-        }
-      });
+    // Update inventory batch quantities
+    for (const update of batchUpdates) {
+      const updateOptions = activeSession
+        ? { session: activeSession, runValidators: true }
+        : { runValidators: true };
+      await InventoryBatch.findByIdAndUpdate(
+        update.batchId,
+        { remainingQuantity: update.newRemainingQuantity },
+        updateOptions
+      );
+    }
 
-      // Update product total quantities from batches after transaction completes
-      setImmediate(async () => {
-        for (const productId of uniqueProductIds) {
-          try {
-            await Product.updateQuantityFromBatches(productId);
-          } catch (error) {
-            console.error(`Error updating quantity for product ${productId}:`, error);
-          }
-        }
-      });
+    // Create sale record with batch allocation information
+    const saleData = {
+      products: processedProducts,
+      totalAmount,
+      cashierName,
+      paymentMethod: paymentMethod || 'cash',
+      customerName,
+      notes,
+    };
+
+    // Use single-document create so pre-save hooks (e.g., receipt number generation) run
+    const createSaleOpts = activeSession ? { session: activeSession } : undefined;
+    const sale = await Sale.create(saleData, createSaleOpts);
+
+    // Store product IDs for updating quantities after (outside of transaction)
+    const uniqueProductIds = [...new Set(products.map((p) => p.productId))];
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        sale,
+      },
     });
-  } catch (error) {
-    throw error;
+
+    // Update product total quantities from batches after response
+    setImmediate(async () => {
+      for (const productId of uniqueProductIds) {
+        try {
+          await Product.updateQuantityFromBatches(productId);
+        } catch (error) {
+          console.error(`Error updating quantity for product ${productId}:`, error);
+        }
+      }
+    });
+  };
+
+  try {
+    try {
+      await session.withTransaction(async () => {
+        await processSaleCore(session);
+      });
+    } catch (txError) {
+      const message = String(txError?.message || '');
+      // Fallback for environments without replica set / transaction support
+      if (
+        message.includes('Transaction numbers are only allowed on a replica set member') ||
+        message.includes('Transaction support is not enabled') ||
+        message.includes('does not support sessions')
+      ) {
+        console.warn('⚠️  MongoDB transactions not supported in current environment. Falling back to non-transactional processing.');
+        await processSaleCore(null);
+      } else {
+        throw txError;
+      }
+    }
   } finally {
     await session.endSession();
   }

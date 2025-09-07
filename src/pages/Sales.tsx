@@ -306,11 +306,15 @@ const Sales = () => {
       setTimeout(() => {
         refreshData();
       }, 1000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sale processing error:", error);
+      const serverMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        t("failed_load_sales_data");
       toast({
         title: t("error"),
-        description: t("failed_load_sales_data"),
+        description: serverMessage,
         variant: "destructive",
       });
     } finally {
