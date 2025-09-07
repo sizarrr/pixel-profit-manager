@@ -7,53 +7,72 @@ import mongoose from 'mongoose';
 export const addInventoryBatch = catchAsync(async (req, res, next) => {
   const session = await mongoose.startSession();
   
-  try {
-    await session.withTransaction(async () => {
-      const {
-        productId,
-        buyPrice,
-        quantity,
-        supplierName,
-        notes,
-        purchaseDate = new Date(),
-        expiryDate
-      } = req.body;
+  const core = async (activeSession) => {
+    const {
+      productId,
+      buyPrice,
+      quantity,
+      supplierName,
+      notes,
+      purchaseDate = new Date(),
+      expiryDate
+    } = req.body;
 
-      // Verify product exists
-      const product = await Product.findById(productId).session(session);
-      if (!product || !product.isActive) {
-        throw new AppError('Product not found or inactive', 404);
+    // Verify product exists
+    const productQuery = Product.findById(productId);
+    const product = activeSession ? await productQuery.session(activeSession) : await productQuery;
+    if (!product || !product.isActive) {
+      throw new AppError('Product not found or inactive', 404);
+    }
+
+    // Create new inventory batch
+    const batchData = {
+      productId,
+      buyPrice,
+      initialQuantity: quantity,
+      remainingQuantity: quantity,
+      purchaseDate: new Date(purchaseDate),
+      supplierName,
+      notes
+    };
+
+    if (expiryDate) {
+      batchData.expiryDate = new Date(expiryDate);
+    }
+
+    const createArgs = activeSession ? [[batchData], { session: activeSession }] : [batchData];
+    const created = await InventoryBatch.create(...createArgs);
+    const createdBatch = Array.isArray(created) ? created[0] : created;
+
+    // Update product total quantity
+    await Product.updateQuantityFromBatches(productId);
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        batch: createdBatch
       }
-
-      // Create new inventory batch
-      const batchData = {
-        productId,
-        buyPrice,
-        initialQuantity: quantity,
-        remainingQuantity: quantity,
-        purchaseDate: new Date(purchaseDate),
-        supplierName,
-        notes
-      };
-
-      if (expiryDate) {
-        batchData.expiryDate = new Date(expiryDate);
-      }
-
-      const batch = await InventoryBatch.create([batchData], { session });
-
-      // Update product total quantity
-      await Product.updateQuantityFromBatches(productId);
-
-      res.status(201).json({
-        status: 'success',
-        data: {
-          batch: batch[0]
-        }
-      });
     });
-  } catch (error) {
-    throw error;
+  };
+
+  try {
+    try {
+      await session.withTransaction(async () => {
+        await core(session);
+      });
+    } catch (txError) {
+      const message = String(txError?.message || '');
+      if (
+        message.includes('Transaction numbers are only allowed on a replica set member') ||
+        message.includes('Transaction support is not enabled') ||
+        message.includes('does not support sessions')
+      ) {
+        console.warn('⚠️  Transactions not supported. Falling back to non-transactional processing for addInventoryBatch.');
+        await core(null);
+      } else {
+        throw txError;
+      }
+    }
   } finally {
     await session.endSession();
   }
