@@ -124,6 +124,12 @@ export interface Sale {
     quantity: number;
     sellPrice: number;
     total: number;
+    batchAllocations?: {
+      batchId: string;
+      quantity: number;
+      buyPrice: number;
+      batchNumber: string;
+    }[];
   }[];
   totalAmount: number;
   cashierName: string;

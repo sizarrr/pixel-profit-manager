@@ -1,4 +1,5 @@
 import Product from "../models/Product.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import { catchAsync, AppError } from "../middleware/errorHandler.js";
 import config from "../config/config.js";
 import mongoose from "mongoose";
@@ -309,7 +310,7 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     const allowedFields = [
       "name",
       "category",
-      "buyPrice", 
+      "buyPrice",
       "sellPrice",
       "quantity",
       "description",
@@ -462,10 +463,70 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       });
     }
 
-    // 8. Perform the update
+    // 8.a Ensure legacy stock (pre-batch) is captured as an initial batch
+    const existingActiveQty = await InventoryBatch.getTotalAvailableQuantity(
+      existingProduct._id
+    );
+    if (existingActiveQty === 0 && Number(existingProduct.quantity) > 0) {
+      console.log(
+        "🧭 Capturing legacy stock into initial batch to enable FIFO"
+      );
+      await InventoryBatch.create({
+        productId: existingProduct._id,
+        buyPrice: parseFloat(existingProduct.buyPrice),
+        initialQuantity: Number(existingProduct.quantity),
+        remainingQuantity: Number(existingProduct.quantity),
+        purchaseDate:
+          existingProduct.createdAt || new Date(Date.now() - 24 * 3600 * 1000),
+        supplierName: "Legacy stock import",
+        notes: "Auto-created from existing product.quantity to initialize FIFO",
+      });
+    }
+
+    // 8.b If quantity is being increased, create an inventory batch instead of direct set
+    let updatedProduct;
+    const isQuantityProvided = updateData.hasOwnProperty("quantity");
+    if (isQuantityProvided) {
+      const newQuantity = parseInt(updateData.quantity);
+      delete updateData.quantity; // prevent direct quantity mutation
+
+      if (newQuantity > existingProduct.quantity) {
+        const quantityToAdd = newQuantity - existingProduct.quantity;
+        console.log(
+          "📦 Detected restock. Creating inventory batch for +",
+          quantityToAdd
+        );
+
+        // Determine buyPrice to use for this new batch
+        const batchBuyPrice = updateData.hasOwnProperty("buyPrice")
+          ? parseFloat(updateData.buyPrice)
+          : parseFloat(existingProduct.buyPrice);
+
+        // Create inventory batch to honor FIFO
+        await InventoryBatch.create({
+          productId: existingProduct._id,
+          batchNumber: undefined, // auto-generate
+          buyPrice: batchBuyPrice,
+          initialQuantity: quantityToAdd,
+          remainingQuantity: quantityToAdd,
+          purchaseDate: new Date(),
+          supplierName: "Manual restock via product update",
+          notes: "Auto-generated to preserve FIFO",
+        });
+
+        // Recompute product quantity from batches after restock
+        await Product.updateQuantityFromBatches(existingProduct._id);
+      } else if (newQuantity < existingProduct.quantity) {
+        console.log(
+          "⚠️ Quantity decrease requested. Ignoring direct decrease to protect FIFO; quantities are derived from batches."
+        );
+      }
+    }
+
+    // Perform the remaining updates (name, prices, etc.)
     console.log("🚀 Performing database update...");
 
-    const updatedProduct = await Product.findByIdAndUpdate(
+    updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
       updateData,
       {
@@ -481,7 +542,10 @@ export const updateProduct = catchAsync(async (req, res, next) => {
 
     console.log("✅ Product updated successfully");
 
-    // 9. Return success response
+    // 9. After any potential restock, ensure quantity is in sync with batches
+    await Product.updateQuantityFromBatches(updatedProduct._id);
+
+    // 10. Return success response
     res.status(200).json({
       status: "success",
       data: {
