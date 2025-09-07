@@ -156,7 +156,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
     ])
   ]);
 
-  // Calculate profit data
+  // Calculate profit data using actual FIFO batch costs
   const profitData = await Sale.aggregate([
     {
       $match: {
@@ -164,6 +164,32 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
       }
     },
     { $unwind: '$products' },
+    {
+      $addFields: {
+        // Calculate actual cost from batch allocations if available
+        actualCost: {
+          $cond: {
+            if: { $and: [
+              { $isArray: '$products.batchAllocations' },
+              { $gt: [{ $size: '$products.batchAllocations' }, 0] }
+            ]},
+            then: {
+              $reduce: {
+                input: '$products.batchAllocations',
+                initialValue: 0,
+                in: {
+                  $add: [
+                    '$$value',
+                    { $multiply: ['$$this.buyPrice', '$$this.quantity'] }
+                  ]
+                }
+              }
+            },
+            else: null
+          }
+        }
+      }
+    },
     {
       $lookup: {
         from: 'products',
@@ -176,9 +202,14 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
     {
       $addFields: {
         profit: {
-          $multiply: [
-            { $subtract: ['$products.sellPrice', '$productInfo.buyPrice'] },
-            '$products.quantity'
+          $subtract: [
+            '$products.total',
+            {
+              $ifNull: [
+                '$actualCost',
+                { $multiply: ['$productInfo.buyPrice', '$products.quantity'] }
+              ]
+            }
           ]
         }
       }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useStore } from "@/contexts/StoreContext";
+import { useStore, calculateActualProfit } from "@/contexts/StoreContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,12 +73,9 @@ const Reports = () => {
       profit +
       sale.products.reduce((saleProfit, item) => {
         const product = products.find((p) => p.id === item.productId);
-        if (product) {
-          return (
-            saleProfit + (item.sellPrice - product.buyPrice) * item.quantity
-          );
-        }
-        return saleProfit;
+        // Use actual FIFO batch costs instead of current product.buyPrice
+        const actualProfit = calculateActualProfit(item, product);
+        return saleProfit + actualProfit;
       }, 0)
     );
   }, 0);
@@ -161,10 +158,8 @@ const Reports = () => {
 
       const saleProfit = sale.products.reduce((profit, item) => {
         const product = products.find((p) => p.id === item.productId);
-        return (
-          profit +
-          (product ? (item.sellPrice - product.buyPrice) * item.quantity : 0)
-        );
+        const actualProfit = calculateActualProfit(item, product);
+        return profit + actualProfit;
       }, 0);
 
       dayMap.set(day, {
@@ -194,9 +189,7 @@ const Reports = () => {
         };
 
         const product = products.find((p) => p.id === item.productId);
-        const profit = product
-          ? (item.sellPrice - product.buyPrice) * item.quantity
-          : 0;
+        const profit = calculateActualProfit(item, product);
 
         productMap.set(item.productId, {
           productName: item.productName,
@@ -227,7 +220,7 @@ const Reports = () => {
             profit: 0,
           };
 
-          const profit = (item.sellPrice - product.buyPrice) * item.quantity;
+          const profit = calculateActualProfit(item, product);
 
           categoryMap.set(product.category, {
             category: product.category,

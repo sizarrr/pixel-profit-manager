@@ -1,6 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { apiService, Product as ApiProduct, Sale as ApiSale } from "../lib/api";
 
+// Utility function to calculate actual profit using FIFO batch allocations
+export const calculateActualProfit = (saleProduct: Sale['products'][0], fallbackProduct?: Product): number => {
+  if (saleProduct.batchAllocations && saleProduct.batchAllocations.length > 0) {
+    // Use actual FIFO batch costs
+    const totalCost = saleProduct.batchAllocations.reduce((cost, allocation) => {
+      return cost + (allocation.buyPrice * allocation.quantity);
+    }, 0);
+    const totalRevenue = saleProduct.sellPrice * saleProduct.quantity;
+    return totalRevenue - totalCost;
+  } else if (fallbackProduct) {
+    // Fallback to product buyPrice if no batch allocation data (for older sales)
+    return (saleProduct.sellPrice - fallbackProduct.buyPrice) * saleProduct.quantity;
+  }
+  return 0;
+};
+
 export interface Product {
   id: string;
   _id: string; // Keep original MongoDB _id for backend operations
@@ -26,6 +42,12 @@ export interface Sale {
     quantity: number;
     sellPrice: number;
     total: number;
+    batchAllocations?: {
+      batchId: string;
+      quantity: number;
+      buyPrice: number;
+      batchNumber: string;
+    }[];
   }[];
   totalAmount: number;
   cashierName: string;

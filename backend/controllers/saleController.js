@@ -400,7 +400,7 @@ export const getTopSellingProducts = catchAsync(async (req, res, next) => {
   });
 });
 
-// Calculate profit for sales (requires product buy prices)
+// Calculate profit for sales using actual FIFO batch costs
 export const getSalesProfit = catchAsync(async (req, res, next) => {
   const { startDate, endDate } = req.query;
   
@@ -415,6 +415,32 @@ export const getSalesProfit = catchAsync(async (req, res, next) => {
     ...(Object.keys(matchStage).length ? [{ $match: matchStage }] : []),
     { $unwind: '$products' },
     {
+      $addFields: {
+        // Calculate actual cost from batch allocations if available
+        actualCost: {
+          $cond: {
+            if: { $and: [
+              { $isArray: '$products.batchAllocations' },
+              { $gt: [{ $size: '$products.batchAllocations' }, 0] }
+            ]},
+            then: {
+              $reduce: {
+                input: '$products.batchAllocations',
+                initialValue: 0,
+                in: {
+                  $add: [
+                    '$$value',
+                    { $multiply: ['$$this.buyPrice', '$$this.quantity'] }
+                  ]
+                }
+              }
+            },
+            else: null
+          }
+        }
+      }
+    },
+    {
       $lookup: {
         from: 'products',
         localField: 'products.productId',
@@ -425,10 +451,22 @@ export const getSalesProfit = catchAsync(async (req, res, next) => {
     { $unwind: '$productInfo' },
     {
       $addFields: {
+        // Use batch cost if available, otherwise fallback to product buyPrice
+        finalCost: {
+          $ifNull: [
+            '$actualCost',
+            { $multiply: ['$productInfo.buyPrice', '$products.quantity'] }
+          ]
+        },
         profit: {
-          $multiply: [
-            { $subtract: ['$products.sellPrice', '$productInfo.buyPrice'] },
-            '$products.quantity'
+          $subtract: [
+            '$products.total',
+            {
+              $ifNull: [
+                '$actualCost',
+                { $multiply: ['$productInfo.buyPrice', '$products.quantity'] }
+              ]
+            }
           ]
         }
       }
@@ -438,7 +476,7 @@ export const getSalesProfit = catchAsync(async (req, res, next) => {
         _id: null,
         totalProfit: { $sum: '$profit' },
         totalRevenue: { $sum: '$products.total' },
-        totalCost: { $sum: { $multiply: ['$productInfo.buyPrice', '$products.quantity'] } }
+        totalCost: { $sum: '$finalCost' }
       }
     }
   ]);
