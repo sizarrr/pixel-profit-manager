@@ -11,7 +11,13 @@ const inventoryBatchSchema = new mongoose.Schema(
     batchNumber: {
       type: String,
       required: [true, 'Batch number is required'],
-      trim: true
+      trim: true,
+      default: function() {
+        const date = new Date(this.purchaseDate || Date.now());
+        const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = date.getTime().toString().slice(-6);
+        return `BATCH-${dateStr}-${timeStr}`;
+      }
     },
     buyPrice: {
       type: Number,
