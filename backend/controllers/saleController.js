@@ -134,7 +134,8 @@ export const createSale = catchAsync(async (req, res, next) => {
             supplierName: 'Legacy stock',
             notes: 'Auto-created from existing product quantity to initialize FIFO'
           };
-          await InventoryBatch.create([initBatchData], { session });
+          // Use single-document create so pre-save hooks (e.g., batch number generation) run
+          await InventoryBatch.create(initBatchData, { session });
           availableBatches = await InventoryBatch.find({
             productId: saleProduct.productId,
             remainingQuantity: { $gt: 0 },
@@ -216,7 +217,8 @@ export const createSale = catchAsync(async (req, res, next) => {
         notes
       };
 
-      const sale = await Sale.create([saleData], { session });
+      // Use single-document create so pre-save hooks (e.g., receipt number generation) run
+      const sale = await Sale.create(saleData, { session });
 
       // Store product IDs for updating quantities after transaction
       const uniqueProductIds = [...new Set(products.map(p => p.productId))];
@@ -224,7 +226,7 @@ export const createSale = catchAsync(async (req, res, next) => {
       res.status(201).json({
         status: 'success',
         data: {
-          sale: sale[0]
+          sale
         }
       });
 
