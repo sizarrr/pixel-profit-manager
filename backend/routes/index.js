@@ -1,3 +1,4 @@
+// backend/routes/index.js - MAIN ROUTES INDEX
 import express from "express";
 import productRoutes from "./productRoutes.js";
 import saleRoutes from "./saleRoutes.js";
@@ -19,6 +20,21 @@ router.get("/health", (req, res) => {
     message: "Store Management API is running",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || "development",
+  });
+});
+
+// API info endpoint
+router.get("/", (req, res) => {
+  res.status(200).json({
+    status: "success",
+    message: "Store Management API v1.0",
+    endpoints: {
+      products: "/products",
+      sales: "/sales",
+      dashboard: "/dashboard",
+      inventory: "/inventory",
+      health: "/health",
+    },
   });
 });
 

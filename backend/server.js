@@ -1,18 +1,20 @@
-// backend/server.js - MAIN SERVER FILE WITH FIFO SUPPORT
+// backend/server.js - FIXED MAIN SERVER FILE
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+import mongoose from "mongoose"; // ADD THIS IMPORT
+import morgan from "morgan"; // ADD THIS FOR LOGGING
 import connectDB from "./config/database.js";
 import config from "./config/config.js";
 import errorHandler, { notFound } from "./middleware/errorHandler.js";
 
-// Import routes
-import productRoutes from "./routes/products.js";
-import salesRoutes from "./routes/sales.js";
-import { inventoryRouter } from "./routes/inventory.js";
-import dashboardRoutes from "./routes/dashboard.js";
+// Import routes - FIXED PATHS
+import productRoutes from "./routes/productRoutes.js";
+import saleRoutes from "./routes/saleRoutes.js";
+import inventoryRoutes from "./routes/inventoryRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
 
 const app = express();
 
@@ -36,6 +38,11 @@ app.use(
 
 // Compression middleware
 app.use(compression());
+
+// Logging middleware in development
+if (config.isDevelopment) {
+  app.use(morgan("dev"));
+}
 
 // Rate limiting
 const limiter = rateLimit({
@@ -127,11 +134,27 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API Routes
+// API Routes - FIXED TO USE CORRECT ROUTE VARIABLES
 app.use(`${config.apiPrefix}/products`, productRoutes);
-app.use(`${config.apiPrefix}/sales`, salesRoutes);
-app.use(`${config.apiPrefix}/inventory`, inventoryRouter);
+app.use(`${config.apiPrefix}/sales`, saleRoutes);
+app.use(`${config.apiPrefix}/inventory`, inventoryRoutes);
 app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
+
+// API documentation endpoint
+app.get(`${config.apiPrefix}`, (req, res) => {
+  res.json({
+    status: "success",
+    message: "Store Management API",
+    version: "1.0.0",
+    endpoints: {
+      health: "/health",
+      products: `${config.apiPrefix}/products`,
+      sales: `${config.apiPrefix}/sales`,
+      inventory: `${config.apiPrefix}/inventory`,
+      dashboard: `${config.apiPrefix}/dashboard`,
+    },
+  });
+});
 
 // API documentation endpoint
 app.get(`${config.apiPrefix}/docs`, (req, res) => {
@@ -237,6 +260,8 @@ const gracefulShutdown = (signal) => {
 };
 
 // Start server
+let server; // Declare server variable in outer scope
+
 const startServer = async () => {
   try {
     // Connect to database
@@ -245,7 +270,7 @@ const startServer = async () => {
 
     // Start HTTP server
     const PORT = config.port;
-    const server = app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(
         `🚀 Server running on port ${PORT} in ${config.nodeEnv} mode`
       );
@@ -284,6 +309,6 @@ const startServer = async () => {
 };
 
 // Start the server
-const server = await startServer();
+startServer();
 
 export default app;
