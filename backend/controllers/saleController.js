@@ -81,11 +81,11 @@ export const getSale = catchAsync(async (req, res, next) => {
   });
 });
 
-// Create new sale (process transaction) with FIFO inventory management
+// Create new sale (process transaction) with FIFO inventory management - FIXED
 export const createSale = catchAsync(async (req, res, next) => {
   console.log("🛒 Processing new sale:", JSON.stringify(req.body, null, 2));
 
-  // Input validation with detailed error messages
+  // Enhanced input validation with detailed error messages
   const {
     products: rawProducts,
     totalAmount: rawTotalAmount,
@@ -95,64 +95,107 @@ export const createSale = catchAsync(async (req, res, next) => {
     notes,
   } = req.body;
 
-  // Validate required fields
+  // STEP 1: Validate required fields with specific error messages
   if (!rawProducts || !Array.isArray(rawProducts) || rawProducts.length === 0) {
     console.error("❌ Missing or invalid products array");
-    return next(new AppError("At least one product is required", 400));
+    return next(new AppError("At least one product is required for sale", 400));
   }
 
-  if (!rawTotalAmount || rawTotalAmount <= 0) {
+  if (
+    !rawTotalAmount ||
+    isNaN(Number(rawTotalAmount)) ||
+    Number(rawTotalAmount) <= 0
+  ) {
     console.error("❌ Missing or invalid total amount");
     return next(
       new AppError("Total amount is required and must be greater than 0", 400)
     );
   }
 
-  if (!cashierName || cashierName.trim() === "") {
+  if (
+    !cashierName ||
+    typeof cashierName !== "string" ||
+    cashierName.trim() === ""
+  ) {
     console.error("❌ Missing cashier name");
     return next(new AppError("Cashier name is required", 400));
   }
 
-  // Clean and validate input data
-  const products = rawProducts.map((p, index) => {
-    console.log(`📦 Processing product ${index + 1}:`, p);
+  // STEP 2: Clean and validate input data with enhanced validation
+  const products = [];
+  for (let i = 0; i < rawProducts.length; i++) {
+    const p = rawProducts[i];
+    console.log(`📦 Processing product ${i + 1}:`, p);
 
-    // Validate product fields
-    if (!p.productId) {
-      throw new AppError(`Product ${index + 1}: Product ID is required`, 400);
-    }
-    if (!p.productName || p.productName.trim() === "") {
-      throw new AppError(`Product ${index + 1}: Product name is required`, 400);
-    }
-    if (!p.quantity || p.quantity <= 0) {
+    // Validate individual product fields
+    if (!p.productId || typeof p.productId !== "string") {
       throw new AppError(
-        `Product ${index + 1}: Valid quantity is required`,
+        `Product ${i + 1}: Product ID is required and must be a string`,
         400
       );
     }
-    if (!p.sellPrice || p.sellPrice <= 0) {
+
+    if (
+      !p.productName ||
+      typeof p.productName !== "string" ||
+      p.productName.trim() === ""
+    ) {
+      throw new AppError(`Product ${i + 1}: Product name is required`, 400);
+    }
+
+    if (!p.quantity || isNaN(Number(p.quantity)) || Number(p.quantity) <= 0) {
       throw new AppError(
-        `Product ${index + 1}: Valid sell price is required`,
+        `Product ${i + 1}: Valid quantity is required (got: ${p.quantity})`,
         400
       );
     }
-    if (!p.total || p.total <= 0) {
-      throw new AppError(`Product ${index + 1}: Valid total is required`, 400);
+
+    if (
+      !p.sellPrice ||
+      isNaN(Number(p.sellPrice)) ||
+      Number(p.sellPrice) <= 0
+    ) {
+      throw new AppError(
+        `Product ${i + 1}: Valid sell price is required (got: ${p.sellPrice})`,
+        400
+      );
     }
 
-    return {
-      productId: mongoose.Types.ObjectId.isValid(p.productId)
-        ? new mongoose.Types.ObjectId(p.productId)
-        : p.productId,
+    if (!p.total || isNaN(Number(p.total)) || Number(p.total) <= 0) {
+      throw new AppError(
+        `Product ${i + 1}: Valid total is required (got: ${p.total})`,
+        400
+      );
+    }
+
+    // Validate product ID format (MongoDB ObjectId)
+    if (!mongoose.Types.ObjectId.isValid(p.productId)) {
+      throw new AppError(`Product ${i + 1}: Invalid product ID format`, 400);
+    }
+
+    // Clean and add to products array
+    products.push({
+      productId: new mongoose.Types.ObjectId(p.productId),
       productName: p.productName.trim(),
       quantity: Number(p.quantity),
       sellPrice: Number(p.sellPrice),
       total: Number(p.total),
-    };
-  });
+    });
+  }
 
   const totalAmount = Number(rawTotalAmount);
   const cleanCashierName = cashierName.trim();
+
+  // Validate payment method
+  const validPaymentMethods = ["cash", "card", "digital"];
+  if (!validPaymentMethods.includes(paymentMethod)) {
+    throw new AppError(
+      `Invalid payment method: ${paymentMethod}. Must be one of: ${validPaymentMethods.join(
+        ", "
+      )}`,
+      400
+    );
+  }
 
   console.log("✅ Validated input data:", {
     productsCount: products.length,
@@ -163,9 +206,9 @@ export const createSale = catchAsync(async (req, res, next) => {
 
   const session = await mongoose.startSession();
 
-  // Core sale processing logic
+  // STEP 3: Core sale processing logic with enhanced FIFO
   const processSaleCore = async (activeSession) => {
-    console.log("💼 Starting FIFO sale processing...");
+    console.log("💼 Starting enhanced FIFO sale processing...");
 
     // Validate and process FIFO inventory allocation
     const processedProducts = [];
@@ -192,7 +235,7 @@ export const createSale = catchAsync(async (req, res, next) => {
         `📊 Product found: ${product.name}, Current stock: ${product.quantity}`
       );
 
-      // Get available inventory batches in FIFO order (oldest first)
+      // STEP 4: Get available inventory batches in FIFO order (oldest first)
       let availableBatches = await InventoryBatch.find({
         productId: saleProduct.productId,
         remainingQuantity: { $gt: 0 },
@@ -211,7 +254,7 @@ export const createSale = catchAsync(async (req, res, next) => {
 
       console.log(`📊 Total available from batches: ${totalAvailable}`);
 
-      // If no batches exist but product has quantity, create initial batch for legacy inventory
+      // STEP 5: If no batches exist but product has quantity, create initial batch for legacy inventory
       if (totalAvailable === 0 && Number(product.quantity) > 0) {
         console.log("🔄 Creating initial batch for legacy inventory...");
 
@@ -254,7 +297,7 @@ export const createSale = catchAsync(async (req, res, next) => {
         );
       }
 
-      // Check if we have enough inventory
+      // STEP 6: Check if we have enough inventory
       if (totalAvailable < saleProduct.quantity) {
         console.error(
           `❌ Insufficient inventory for ${product.name}. Available: ${totalAvailable}, Requested: ${saleProduct.quantity}`
@@ -265,7 +308,7 @@ export const createSale = catchAsync(async (req, res, next) => {
         );
       }
 
-      // Verify price matches current product price
+      // STEP 7: Verify price matches current product price (with small tolerance for rounding)
       if (
         Math.abs(Number(saleProduct.sellPrice) - Number(product.sellPrice)) >
         0.01
@@ -274,23 +317,29 @@ export const createSale = catchAsync(async (req, res, next) => {
           `❌ Price mismatch for ${product.name}. Expected: ${product.sellPrice}, Got: ${saleProduct.sellPrice}`
         );
         throw new AppError(
-          `Price mismatch for ${product.name}. Current price: ${product.sellPrice}`,
+          `Price mismatch for ${product.name}. Current price: $${product.sellPrice}, provided: $${saleProduct.sellPrice}`,
           400
         );
       }
 
-      // Verify item total calculation
-      const expectedTotal = saleProduct.sellPrice * saleProduct.quantity;
-      if (Math.abs(saleProduct.total - expectedTotal) > 0.01) {
+      // STEP 8: Verify item total calculation
+      const expectedTotal =
+        Math.round(saleProduct.sellPrice * saleProduct.quantity * 100) / 100;
+      const providedTotal = Math.round(saleProduct.total * 100) / 100;
+
+      if (Math.abs(providedTotal - expectedTotal) > 0.01) {
         console.error(
-          `❌ Total mismatch for ${product.name}. Expected: ${expectedTotal}, Got: ${saleProduct.total}`
+          `❌ Total mismatch for ${product.name}. Expected: ${expectedTotal}, Got: ${providedTotal}`
         );
-        throw new AppError(`Total calculation error for ${product.name}`, 400);
+        throw new AppError(
+          `Total calculation error for ${product.name}. Expected: $${expectedTotal}, got: $${providedTotal}`,
+          400
+        );
       }
 
       calculatedTotal += expectedTotal;
 
-      // FIFO allocation logic
+      // STEP 9: FIFO allocation logic
       console.log(
         `🔄 Starting FIFO allocation for ${saleProduct.quantity} units...`
       );
@@ -337,17 +386,23 @@ export const createSale = catchAsync(async (req, res, next) => {
       processedProducts.push(enhancedSaleProduct);
     }
 
-    // Verify total amount matches calculation
-    if (Math.abs(Number(totalAmount) - calculatedTotal) > 0.01) {
+    // STEP 10: Verify total amount matches calculation
+    const finalCalculatedTotal = Math.round(calculatedTotal * 100) / 100;
+    const finalProvidedTotal = Math.round(Number(totalAmount) * 100) / 100;
+
+    if (Math.abs(finalProvidedTotal - finalCalculatedTotal) > 0.01) {
       console.error(
-        `❌ Total amount mismatch. Expected: ${calculatedTotal}, Got: ${totalAmount}`
+        `❌ Total amount mismatch. Expected: ${finalCalculatedTotal}, Got: ${finalProvidedTotal}`
       );
-      throw new AppError("Total amount mismatch. Please recalculate.", 400);
+      throw new AppError(
+        `Total amount mismatch. Expected: $${finalCalculatedTotal}, got: $${finalProvidedTotal}. Please recalculate.`,
+        400
+      );
     }
 
     console.log("💰 Amount verification passed");
 
-    // Update inventory batch quantities
+    // STEP 11: Update inventory batch quantities
     console.log(`🔄 Updating ${batchUpdates.length} inventory batches...`);
     for (const update of batchUpdates) {
       const updateOptions = activeSession
@@ -363,17 +418,17 @@ export const createSale = catchAsync(async (req, res, next) => {
 
     console.log("✅ Inventory batches updated");
 
-    // Create sale record with batch allocation information
+    // STEP 12: Create sale record with batch allocation information
     const saleData = {
       products: processedProducts,
-      totalAmount,
+      totalAmount: Number(totalAmount),
       cashierName: cleanCashierName,
       paymentMethod,
       customerName: customerName?.trim() || undefined,
       notes: notes?.trim() || undefined,
     };
 
-    console.log("💾 Creating sale record...");
+    console.log("💾 Creating sale record...", saleData);
 
     let sale;
     if (activeSession) {
@@ -418,7 +473,7 @@ export const createSale = catchAsync(async (req, res, next) => {
     });
   };
 
-  // Execute with transaction support where available
+  // STEP 13: Execute with transaction support where available
   try {
     try {
       await session.withTransaction(async () => {

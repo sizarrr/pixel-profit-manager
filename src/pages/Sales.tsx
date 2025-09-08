@@ -1,3 +1,4 @@
+// src/pages/Sales.tsx - FIXED VERSION
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "@/contexts/StoreContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import {
   Package,
   CheckCircle,
   Scan,
+  AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -69,18 +71,23 @@ const Sales = () => {
         );
         toast({
           title: t("update"),
-          description: `${product.name} ${t("quantity")}: ${existingItem.quantity + 1}`,
+          description: `${product.name} ${t("quantity")}: ${
+            existingItem.quantity + 1
+          }`,
         });
       } else {
         toast({
           title: t("insufficient_stock"),
-          description: `${t("only_units_available").replace("{count}", String(product.quantity))}`,
+          description: `${t("only_units_available").replace(
+            "{count}",
+            String(product.quantity)
+          )}`,
           variant: "destructive",
         });
       }
     } else {
       const newCartItem: CartItem = {
-        productId: product.id, // This will be the frontend ID, we'll map it back in processSale
+        productId: product.id,
         productName: product.name,
         sellPrice: product.sellPrice,
         quantity: 1,
@@ -106,7 +113,10 @@ const Sales = () => {
     if (newQuantity > item.availableStock) {
       toast({
         title: t("insufficient_stock"),
-        description: `${t("only_units_available").replace("{count}", String(item.availableStock))}`,
+        description: `${t("only_units_available").replace(
+          "{count}",
+          String(item.availableStock)
+        )}`,
         variant: "destructive",
       });
       return;
@@ -240,8 +250,11 @@ const Sales = () => {
     setSearchTerm(value);
   };
 
-  // Process sale function
+  // Enhanced sale processing function with better validation
   const processSale = async () => {
+    console.log("🛒 Starting sale processing...");
+
+    // Validation checks
     if (cart.length === 0) {
       toast({
         title: t("empty_cart"),
@@ -256,7 +269,7 @@ const Sales = () => {
       const product = products.find((p) => p.id === cartItem.productId);
       if (!product || product.quantity < cartItem.quantity) {
         toast({
-          title: t("stock_error"),
+          title: t("insufficient_stock"),
           description: `${t("insufficient_stock")} ${cartItem.productName}`,
           variant: "destructive",
         });
@@ -267,28 +280,82 @@ const Sales = () => {
     setIsProcessingSale(true);
 
     try {
+      // Calculate totals with proper rounding
+      const calculatedTotal = cart.reduce(
+        (total, item) =>
+          total + Math.round(item.sellPrice * item.quantity * 100) / 100,
+        0
+      );
+
+      // Prepare sale data with enhanced validation
       const saleData = {
         products: cart.map((item) => {
           // Find the original product to get the MongoDB _id
-          const originalProduct = products.find(p => p.id === item.productId);
+          const originalProduct = products.find((p) => p.id === item.productId);
+
+          if (!originalProduct) {
+            throw new Error(`Product not found: ${item.productName}`);
+          }
+
+          const itemTotal =
+            Math.round(item.sellPrice * item.quantity * 100) / 100;
+
           return {
-            productId: originalProduct?._id || item.productId, // Use MongoDB _id for backend
-            productName: item.productName,
-            quantity: item.quantity,
-            sellPrice: item.sellPrice,
-            total: item.sellPrice * item.quantity,
+            productId: originalProduct._id, // Use MongoDB _id for backend
+            productName: item.productName.trim(),
+            quantity: Number(item.quantity),
+            sellPrice: Number(item.sellPrice),
+            total: itemTotal,
           };
         }),
-        totalAmount: getTotalAmount(),
-        cashierName: "Store Manager",
+        totalAmount: Math.round(calculatedTotal * 100) / 100,
+        cashierName: "Store Manager", // This should come from user context in real app
         paymentMethod: "cash",
+        customerName: undefined, // Optional
+        notes: undefined, // Optional
       };
+
+      console.log("📤 Sending sale data:", JSON.stringify(saleData, null, 2));
+
+      // Validate sale data before sending
+      if (!saleData.cashierName || saleData.cashierName.trim() === "") {
+        throw new Error("Cashier name is required");
+      }
+
+      if (saleData.totalAmount <= 0) {
+        throw new Error("Total amount must be greater than 0");
+      }
+
+      if (!saleData.products || saleData.products.length === 0) {
+        throw new Error("At least one product is required");
+      }
+
+      // Validate each product
+      saleData.products.forEach((product, index) => {
+        if (!product.productId) {
+          throw new Error(`Product ${index + 1}: Product ID is required`);
+        }
+        if (!product.productName || product.productName.trim() === "") {
+          throw new Error(`Product ${index + 1}: Product name is required`);
+        }
+        if (!product.quantity || product.quantity <= 0) {
+          throw new Error(`Product ${index + 1}: Valid quantity is required`);
+        }
+        if (!product.sellPrice || product.sellPrice <= 0) {
+          throw new Error(`Product ${index + 1}: Valid sell price is required`);
+        }
+        if (!product.total || product.total <= 0) {
+          throw new Error(`Product ${index + 1}: Valid total is required`);
+        }
+      });
 
       await addSale(saleData);
 
       toast({
         title: t("sale_completed"),
-        description: `${t("sale_processed")}`,
+        description: `${t(
+          "sale_processed"
+        )} Total: $${saleData.totalAmount.toFixed(2)}`,
         duration: 5000,
       });
 
@@ -307,14 +374,19 @@ const Sales = () => {
         refreshData();
       }, 1000);
     } catch (error: any) {
-      console.error("Sale processing error:", error);
-      const serverMessage =
-        error?.response?.data?.message ||
-        error?.message ||
-        t("failed_load_sales_data");
+      console.error("❌ Sale processing error:", error);
+
+      let errorMessage = "An error occurred while processing the sale";
+
+      if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
       toast({
         title: t("error"),
-        description: serverMessage,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -386,6 +458,12 @@ const Sales = () => {
     };
   }, []);
 
+  // Calculate cart summary
+  const cartSummary = {
+    itemCount: cart.reduce((sum, item) => sum + item.quantity, 0),
+    totalAmount: getTotalAmount(),
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Products Section */}
@@ -401,7 +479,9 @@ const Sales = () => {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Scan className="w-5 h-5 text-blue-600" />
-                <h3 className="font-semibold text-blue-900">{t("barcode_scanner")}</h3>
+                <h3 className="font-semibold text-blue-900">
+                  {t("barcode_scanner")}
+                </h3>
                 {isSearching && (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 )}
@@ -416,7 +496,7 @@ const Sales = () => {
                   onChange={(e) => handleBarcodeInputChange(e.target.value)}
                   onKeyPress={handleBarcodeKeyPress}
                   disabled={isSearching}
-                  className="pl-10 bg-white text-lg font-mono "
+                  className="pl-10 bg-white text-lg font-mono"
                   autoComplete="off"
                 />
               </div>
@@ -434,7 +514,9 @@ const Sales = () => {
                 >
                   {barcodeInput.length >= 8
                     ? `✓ ${t("ready")}`
-                    : `${Math.max(0, 8 - barcodeInput.length)} ${t("more_chars")}`}
+                    : `${Math.max(0, 8 - barcodeInput.length)} ${t(
+                        "more_chars"
+                      )}`}
                 </span>
               </div>
             </div>
@@ -538,7 +620,7 @@ const Sales = () => {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-5 h-5" />
-                {t("shopping_cart")} ({cart.length})
+                {t("shopping_cart")} ({cartSummary.itemCount})
               </div>
               {cart.length > 0 && (
                 <Button
@@ -557,7 +639,9 @@ const Sales = () => {
               <div className="text-center py-8">
                 <ShoppingCart className="w-12 h-12 mx-auto text-gray-300 mb-4" />
                 <p className="text-gray-500">{t("your_cart_empty")}</p>
-                <p className="text-sm text-gray-400 mt-1">{t("scan_or_add_to_get_started")}</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {t("scan_or_add_to_get_started")}
+                </p>
               </div>
             ) : (
               <div className="space-y-4 max-h-96 overflow-y-auto">
@@ -574,7 +658,8 @@ const Sales = () => {
                         ${item.sellPrice} {t("each")}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {t("total")}: ${(item.sellPrice * item.quantity).toFixed(2)}
+                        {t("total")}: $
+                        {(item.sellPrice * item.quantity).toFixed(2)}
                       </p>
                     </div>
 
@@ -652,7 +737,7 @@ const Sales = () => {
                   <div className="flex justify-between items-center text-lg font-bold">
                     <span>{t("total")}:</span>
                     <span className="text-green-600">
-                      ${getTotalAmount().toFixed(2)}
+                      ${cartSummary.totalAmount.toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -686,6 +771,48 @@ const Sales = () => {
                     {t("print_receipt")}
                   </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Sale Processing Status */}
+        {isProcessingSale && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-yellow-600"></div>
+                <div>
+                  <p className="font-medium text-yellow-800">
+                    Processing Sale...
+                  </p>
+                  <p className="text-sm text-yellow-600">
+                    Please wait while we process your transaction.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Error Display */}
+        {cart.length > 0 && (
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>💡 Sale will be processed using FIFO inventory</p>
+                <p>
+                  📦 {cartSummary.itemCount} items • $
+                  {cartSummary.totalAmount.toFixed(2)} total
+                </p>
+                {cart.some(
+                  (item) => item.quantity >= item.availableStock * 0.8
+                ) && (
+                  <div className="flex items-center gap-1 text-orange-600">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>Some items have low stock remaining</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

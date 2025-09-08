@@ -1,31 +1,41 @@
+// backend/server.js - MAIN SERVER FILE WITH FIFO SUPPORT
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
-
-import config from "./config/config.js";
 import connectDB from "./config/database.js";
-import routes from "./routes/index.js";
+import config from "./config/config.js";
 import errorHandler, { notFound } from "./middleware/errorHandler.js";
 
-// Create Express application
+// Import routes
+import productRoutes from "./routes/products.js";
+import salesRoutes from "./routes/sales.js";
+import { inventoryRouter } from "./routes/inventory.js";
+import dashboardRoutes from "./routes/dashboard.js";
+
 const app = express();
-let server; // Will hold the HTTP server instance once started
 
-// Connect to MongoDB
-connectDB();
-
-// Trust proxy (for rate limiting behind reverse proxy)
+// Trust proxy for rate limiting behind reverse proxy
 app.set("trust proxy", 1);
 
 // Security middleware
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+      },
+    },
   })
 );
+
+// Compression middleware
+app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
@@ -39,125 +49,241 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(limiter);
+app.use("/api/", limiter);
 
 // CORS configuration
 app.use(
   cors({
-    origin: config.corsOrigin,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        config.corsOrigin,
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+      ];
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
 
-// Compression middleware
-app.use(compression());
-
-// Logging middleware
-if (config.isDevelopment) {
-  app.use(morgan("dev"));
-} else {
-  app.use(morgan("combined"));
-}
-
 // Body parsing middleware
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, res, buf) => {
+      try {
+        JSON.parse(buf);
+      } catch (e) {
+        res.status(400).json({
+          status: "error",
+          message: "Invalid JSON in request body",
+        });
+        throw new Error("Invalid JSON");
+      }
+    },
+  })
+);
 
-// API routes
-app.use(config.apiPrefix, routes);
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb",
+  })
+);
 
-// Root endpoint
-app.get("/", (req, res) => {
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log("Request body keys:", Object.keys(req.body));
+  }
+  next();
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
   res.status(200).json({
     status: "success",
-    message: "Welcome to Store Management API",
-    version: "1.0.0",
-    documentation: `${req.protocol}://${req.get("host")}${
-      config.apiPrefix
-    }/health`,
-    endpoints: {
-      products: `${req.protocol}://${req.get("host")}${
-        config.apiPrefix
-      }/products`,
-      sales: `${req.protocol}://${req.get("host")}${config.apiPrefix}/sales`,
-      dashboard: `${req.protocol}://${req.get("host")}${
-        config.apiPrefix
-      }/dashboard`,
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv,
+    features: {
+      fifo: true,
+      inventoryBatches: true,
+      realTimeStock: true,
     },
   });
 });
 
-// Handle 404 errors
-app.use(notFound);
+// API Routes
+app.use(`${config.apiPrefix}/products`, productRoutes);
+app.use(`${config.apiPrefix}/sales`, salesRoutes);
+app.use(`${config.apiPrefix}/inventory`, inventoryRouter);
+app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
+
+// API documentation endpoint
+app.get(`${config.apiPrefix}/docs`, (req, res) => {
+  res.json({
+    status: "success",
+    data: {
+      name: "Store Management API with FIFO Inventory",
+      version: "1.0.0",
+      description: "Complete inventory management system with FIFO support",
+      endpoints: {
+        products: {
+          "GET /api/v1/products":
+            "Get all products with filtering and pagination",
+          "GET /api/v1/products/:id": "Get single product by ID",
+          "GET /api/v1/products/barcode/:barcode": "Get product by barcode",
+          "POST /api/v1/products": "Create new product",
+          "PUT /api/v1/products/:id": "Update product",
+          "DELETE /api/v1/products/:id": "Delete product (soft delete)",
+        },
+        sales: {
+          "GET /api/v1/sales": "Get all sales with filtering",
+          "GET /api/v1/sales/:id": "Get single sale by ID",
+          "POST /api/v1/sales": "Create new sale (FIFO processing)",
+          "GET /api/v1/sales/stats": "Get sales statistics",
+          "GET /api/v1/sales/profit": "Get profit analysis with FIFO costs",
+        },
+        inventory: {
+          "GET /api/v1/inventory/summary":
+            "Get inventory summary with FIFO costs",
+          "GET /api/v1/inventory/batches": "Get all inventory batches",
+          "POST /api/v1/inventory/batches": "Add new inventory batch",
+          "GET /api/v1/inventory/products/:id/batches":
+            "Get batches for product",
+          "PUT /api/v1/inventory/batches/:id": "Update inventory batch",
+          "PUT /api/v1/inventory/batches/:id/adjust": "Adjust batch quantity",
+          "GET /api/v1/inventory/low-stock": "Get low stock products",
+          "GET /api/v1/inventory/expiring": "Get expiring batches",
+        },
+        dashboard: {
+          "GET /api/v1/dashboard/overview":
+            "Get dashboard overview with FIFO profits",
+          "GET /api/v1/dashboard/analytics": "Get detailed analytics",
+        },
+      },
+      features: {
+        fifo: {
+          description: "First-In-First-Out inventory management",
+          benefits: [
+            "Accurate cost tracking per sale",
+            "Proper inventory valuation",
+            "Automated oldest-stock-first allocation",
+            "Detailed batch tracking and reporting",
+          ],
+        },
+        validation: {
+          description: "Comprehensive input validation",
+          features: [
+            "MongoDB ObjectId validation",
+            "Price and quantity validation",
+            "Cross-field validation for totals",
+            "Barcode format validation",
+          ],
+        },
+      },
+    },
+  });
+});
+
+// Catch-all for undefined API routes
+app.all(`${config.apiPrefix}/*`, notFound);
 
 // Global error handling middleware
 app.use(errorHandler);
 
-// Graceful shutdown handlers
+// Graceful shutdown handler
 const gracefulShutdown = (signal) => {
-  console.log(`\n🔄 Received ${signal}. Graceful shutdown initiated...`);
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
 
-  if (server && typeof server.close === "function") {
-    server.close(() => {
-      console.log("📪 HTTP server closed.");
+  server.close((err) => {
+    if (err) {
+      console.error("Error during server shutdown:", err);
+      process.exit(1);
+    }
+
+    console.log("HTTP server closed.");
+
+    // Close database connection
+    if (mongoose.connection.readyState === 1) {
+      mongoose.connection.close(() => {
+        console.log("MongoDB connection closed.");
+        process.exit(0);
+      });
+    } else {
       process.exit(0);
+    }
+  });
+
+  // Force close after 10 seconds
+  setTimeout(() => {
+    console.error("Forced shutdown after 10 seconds");
+    process.exit(1);
+  }, 10000);
+};
+
+// Start server
+const startServer = async () => {
+  try {
+    // Connect to database
+    await connectDB();
+    console.log("✅ Database connected successfully");
+
+    // Start HTTP server
+    const PORT = config.port;
+    const server = app.listen(PORT, () => {
+      console.log(
+        `🚀 Server running on port ${PORT} in ${config.nodeEnv} mode`
+      );
+      console.log(
+        `📚 API Documentation: http://localhost:${PORT}${config.apiPrefix}/docs`
+      );
+      console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+      console.log(`🔄 FIFO Inventory Management: ENABLED`);
+
+      if (config.isDevelopment) {
+        console.log(`🌐 Frontend URL: ${config.corsOrigin}`);
+      }
     });
 
-    // Force close after 30 seconds
-    setTimeout(() => {
-      console.error(
-        "❌ Could not close connections in time, forcefully shutting down"
-      );
-      process.exit(1);
-    }, 30000);
-  } else {
-    // Server not yet started; exit immediately
-    process.exit(0);
+    // Graceful shutdown handlers
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+    // Handle uncaught exceptions
+    process.on("uncaughtException", (err) => {
+      console.error("Uncaught Exception:", err);
+      gracefulShutdown("UNCAUGHT_EXCEPTION");
+    });
+
+    // Handle unhandled promise rejections
+    process.on("unhandledRejection", (reason, promise) => {
+      console.error("Unhandled Rejection at:", promise, "reason:", reason);
+      gracefulShutdown("UNHANDLED_REJECTION");
+    });
+
+    return server;
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
   }
 };
 
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (err, promise) => {
-  console.error("❌ Unhandled Promise Rejection:", err.message);
-  console.error(
-    "💥 Shutting down the server due to unhandled promise rejection"
-  );
-  gracefulShutdown("UNHANDLED_REJECTION");
-});
-
-// Handle uncaught exceptions
-process.on("uncaughtException", (err) => {
-  console.error("❌ Uncaught Exception:", err.message);
-  console.error("💥 Shutting down the server due to uncaught exception");
-  process.exit(1);
-});
-
-// Graceful shutdown signals
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-// Start server
-const PORT = config.port;
-server = app.listen(PORT, () => {
-  console.log(`
-🚀 Store Management API Server Started!
-📍 Environment: ${config.nodeEnv}
-🌐 Port: ${PORT}
-📊 API Base URL: http://localhost:${PORT}${config.apiPrefix}
-🏥 Health Check: http://localhost:${PORT}${config.apiPrefix}/health
-📚 API Documentation:
-   - Products: http://localhost:${PORT}${config.apiPrefix}/products
-   - Sales: http://localhost:${PORT}${config.apiPrefix}/sales  
-   - Dashboard: http://localhost:${PORT}${config.apiPrefix}/dashboard
-
-${
-  config.isDevelopment
-    ? "🔧 Development Mode - Detailed logging enabled"
-    : "🔒 Production Mode - Security enhanced"
-}
-  `);
-});
+// Start the server
+const server = await startServer();
 
 export default app;
