@@ -243,9 +243,12 @@ const gracefulShutdown = (signal) => {
 
     // Close database connection
     if (mongoose.connection.readyState === 1) {
-      mongoose.connection.close(() => {
+      mongoose.connection.close().then(() => {
         console.log("MongoDB connection closed.");
         process.exit(0);
+      }).catch(err => {
+        console.error("Error closing MongoDB connection:", err);
+        process.exit(1);
       });
     } else {
       process.exit(0);
