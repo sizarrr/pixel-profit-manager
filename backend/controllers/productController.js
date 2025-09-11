@@ -186,11 +186,11 @@ export const getProductByBarcode = catchAsync(async (req, res, next) => {
 // Create new product
 export const createProduct = catchAsync(async (req, res, next) => {
   try {
-    const productData = {
-      ...req.body,
-      lowStockThreshold:
-        req.body.lowStockThreshold || config.defaultLowStockThreshold,
-    };
+    // Extract legacy fields that will be used for initial batch
+    const { buyPrice, sellPrice, quantity, ...productData } = req.body;
+    
+    // Set default low stock threshold
+    productData.lowStockThreshold = productData.lowStockThreshold || config.defaultLowStockThreshold;
 
     // Enhanced barcode validation
     if (productData.barcode) {
@@ -216,19 +216,20 @@ export const createProduct = catchAsync(async (req, res, next) => {
       productData.barcode = trimmedBarcode;
     }
 
-    // Validate prices
-    if (
-      productData.buyPrice !== undefined &&
-      productData.sellPrice !== undefined
-    ) {
-      const buyPrice = parseFloat(productData.buyPrice);
-      const sellPrice = parseFloat(productData.sellPrice);
+    // Validate prices if provided
+    let initialBuyPrice = 0;
+    let initialSellPrice = 0;
+    let initialQuantity = 0;
+    
+    if (buyPrice !== undefined || sellPrice !== undefined) {
+      initialBuyPrice = parseFloat(buyPrice || 0);
+      initialSellPrice = parseFloat(sellPrice || 0);
 
-      if (isNaN(buyPrice) || isNaN(sellPrice)) {
+      if (isNaN(initialBuyPrice) || isNaN(initialSellPrice)) {
         return next(new AppError("Invalid price values", 400));
       }
 
-      if (sellPrice < buyPrice) {
+      if (initialSellPrice < initialBuyPrice) {
         return next(
           new AppError(
             "Sell price must be greater than or equal to buy price",
@@ -237,13 +238,63 @@ export const createProduct = catchAsync(async (req, res, next) => {
         );
       }
     }
+    
+    if (quantity !== undefined) {
+      initialQuantity = parseInt(quantity || 0);
+      if (isNaN(initialQuantity) || initialQuantity < 0) {
+        return next(new AppError("Invalid quantity value", 400));
+      }
+    }
 
+    // Set initial values if provided
+    if (initialBuyPrice > 0) {
+      productData.currentBuyPrice = initialBuyPrice;
+    }
+    if (initialSellPrice > 0) {
+      productData.currentSellPrice = initialSellPrice;
+    }
+    if (initialQuantity > 0) {
+      productData.totalQuantity = initialQuantity;
+    }
+
+    // Create the product first
     const product = await Product.create(productData);
+
+    // If initial stock is provided, create an inventory batch
+    console.log("Initial values:", { initialQuantity, initialBuyPrice, initialSellPrice });
+    if (initialQuantity > 0 && initialBuyPrice > 0) {
+      console.log("Creating inventory batch for new product...");
+      try {
+        const batch = await InventoryBatch.create({
+          productId: product._id,
+          buyPrice: initialBuyPrice,
+          sellPrice: initialSellPrice,
+          initialQuantity: initialQuantity,
+          remainingQuantity: initialQuantity,
+          purchaseDate: new Date(),
+          supplierName: "Initial Stock",
+          notes: "Initial inventory when product was created",
+        });
+        console.log("Inventory batch created:", batch.batchNumber);
+
+        // Update product with calculated fields from batch
+        await product.updateFromBatches();
+        console.log("Product updated from batches");
+      } catch (batchError) {
+        console.error("Error creating inventory batch:", batchError);
+        // Don't fail the product creation, just log the error
+      }
+    } else {
+      console.log("Skipping batch creation - no initial stock or price");
+    }
+
+    // Reload the product to get updated fields
+    const updatedProduct = await Product.findById(product._id);
 
     res.status(201).json({
       status: "success",
       data: {
-        product,
+        product: updatedProduct,
       },
     });
   } catch (error) {

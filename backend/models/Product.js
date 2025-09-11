@@ -87,6 +87,19 @@ productSchema.virtual("needsReorder").get(function () {
   return this.totalQuantity <= this.reorderPoint;
 });
 
+// Compatibility virtuals for frontend
+productSchema.virtual("buyPrice").get(function () {
+  return this.currentBuyPrice;
+});
+
+productSchema.virtual("sellPrice").get(function () {
+  return this.currentSellPrice;
+});
+
+productSchema.virtual("quantity").get(function () {
+  return this.totalQuantity;
+});
+
 // Get inventory batches for this product
 productSchema.virtual("batches", {
   ref: "InventoryBatch",
@@ -105,6 +118,8 @@ productSchema.index({ totalQuantity: 1 });
 productSchema.methods.updateFromBatches = async function () {
   const InventoryBatch = mongoose.model("InventoryBatch");
 
+  console.log("updateFromBatches called for product:", this._id);
+  
   const aggregation = await InventoryBatch.aggregate([
     {
       $match: {
@@ -132,22 +147,30 @@ productSchema.methods.updateFromBatches = async function () {
     },
   ]);
 
+  console.log("Aggregation result:", aggregation);
+
   if (aggregation.length > 0) {
     const stats = aggregation[0];
     this.totalQuantity = stats.totalQuantity;
     this.currentBuyPrice =
       stats.totalRemainingQuantity > 0
-        ? (stats.weightedBuyPrice / stats.totalRemainingQuantity).toFixed(2)
+        ? parseFloat((stats.weightedBuyPrice / stats.totalRemainingQuantity).toFixed(2))
         : 0;
     this.currentSellPrice =
       stats.totalRemainingQuantity > 0
-        ? (stats.weightedSellPrice / stats.totalRemainingQuantity).toFixed(2)
+        ? parseFloat((stats.weightedSellPrice / stats.totalRemainingQuantity).toFixed(2))
         : 0;
   } else {
     this.totalQuantity = 0;
     this.currentBuyPrice = 0;
     this.currentSellPrice = 0;
   }
+
+  console.log("Updated product fields:", {
+    totalQuantity: this.totalQuantity,
+    currentBuyPrice: this.currentBuyPrice,
+    currentSellPrice: this.currentSellPrice
+  });
 
   return this.save();
 };
@@ -189,6 +212,15 @@ productSchema.statics.getWithBatchDetails = function () {
       },
     },
   ]);
+};
+
+// Static method to update product quantity from its batches
+productSchema.statics.updateQuantityFromBatches = async function(productId) {
+  const product = await this.findById(productId);
+  if (product) {
+    return product.updateFromBatches();
+  }
+  return null;
 };
 
 const Product = mongoose.model("Product", productSchema);
