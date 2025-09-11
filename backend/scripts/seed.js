@@ -217,11 +217,21 @@ const sampleProducts = [
 const createInventoryBatches = async (products) => {
   const batches = [];
 
-  for (const product of products) {
+  for (let idx = 0; idx < products.length; idx++) {
+    const product = products[idx];
+    const originalProduct = sampleProducts[idx];
+    
+    // Skip if original product doesn't have required fields
+    if (!originalProduct.buyPrice || !originalProduct.sellPrice) {
+      console.warn(`⚠️  Skipping product ${product.name} - missing buyPrice or sellPrice in original data`);
+      continue;
+    }
+    
     // Create 1-3 batches for each product
     const numBatches = Math.floor(Math.random() * 3) + 1;
-    const quantityPerBatch = Math.floor(product.quantity / numBatches);
-    const remainder = product.quantity % numBatches;
+    const totalQuantity = originalProduct.quantity || 50;
+    const quantityPerBatch = Math.floor(totalQuantity / numBatches);
+    const remainder = totalQuantity % numBatches;
 
     for (let i = 0; i < numBatches; i++) {
       const batchQuantity =
@@ -229,9 +239,18 @@ const createInventoryBatches = async (products) => {
       const purchaseDate = new Date();
       purchaseDate.setDate(purchaseDate.getDate() - 30 * (numBatches - i)); // Stagger purchase dates
 
+      const buyPrice = originalProduct.buyPrice * (0.9 + Math.random() * 0.2); // Vary buy price ±10%
+      const sellPrice = originalProduct.sellPrice; // Use product's sellPrice
+      
+      // Add timestamp and index to ensure unique batch numbers
+      const timestamp = Date.now() + i;
+      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to ensure unique timestamps
+      
       batches.push({
         productId: product._id,
-        buyPrice: product.buyPrice * (0.9 + Math.random() * 0.2), // Vary buy price ±10%
+        batchNumber: `BATCH-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
+        buyPrice: Math.round(buyPrice * 100) / 100, // Round to 2 decimal places
+        sellPrice: Math.round(sellPrice * 100) / 100,
         initialQuantity: batchQuantity,
         remainingQuantity: batchQuantity,
         purchaseDate,
@@ -345,15 +364,16 @@ const seedDatabase = async () => {
     // Update product quantities from batches
     console.log("🔄 Updating product quantities from batches...");
     for (const product of products) {
-      await Product.updateQuantityFromBatches(product._id);
+      const productDoc = await Product.findById(product._id);
+      if (productDoc) {
+        await productDoc.updateFromBatches();
+      }
     }
     console.log("✅ Product quantities updated");
 
-    // Create and insert sales
-    console.log("💰 Creating sample sales...");
-    const sales = await createSampleSales(products);
-    const insertedSales = await Sale.insertMany(sales);
-    console.log(`✅ Created ${insertedSales.length} sales`);
+    // Skip sales creation - sales require FIFO allocation through the API
+    console.log("💰 Skipping sample sales creation (use API to create sales with proper FIFO allocation)");
+    const insertedSales = [];
 
     console.log("\n🎉 Database seeding completed successfully!");
     console.log(`

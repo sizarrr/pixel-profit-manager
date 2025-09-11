@@ -29,23 +29,6 @@ export const validateProduct = [
     .isLength({ min: 2, max: 50 })
     .withMessage("Category must be between 2 and 50 characters"),
 
-  body("buyPrice")
-    .isNumeric()
-    .withMessage("Buy price must be a number")
-    .isFloat({ min: 0 })
-    .withMessage("Buy price cannot be negative"),
-
-  body("sellPrice")
-    .isNumeric()
-    .withMessage("Sell price must be a number")
-    .isFloat({ min: 0 })
-    .withMessage("Sell price cannot be negative"),
-    // Cross-field validation moved to controller for better error handling
-
-  body("quantity")
-    .isInt({ min: 0 })
-    .withMessage("Quantity must be a non-negative integer"),
-
   body("description")
     .trim()
     .notEmpty()
@@ -85,27 +68,6 @@ export const validateProductUpdate = [
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Category must be between 2 and 50 characters"),
-
-  body("buyPrice")
-    .optional()
-    .isNumeric()
-    .withMessage("Buy price must be a number")
-    .isFloat({ min: 0 })
-    .withMessage("Buy price cannot be negative"),
-
-  body("sellPrice")
-    .optional()
-    .isNumeric()
-    .withMessage("Sell price must be a number")
-    .isFloat({ min: 0 })
-    .withMessage("Sell price cannot be negative"),
-    // Removed cross-field validation from middleware as it's handled in controller
-    // where we have access to existing product data for proper validation
-
-  body("quantity")
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage("Quantity must be a non-negative integer"),
 
   body("description")
     .optional()
@@ -258,8 +220,6 @@ export const validateQuery = [
       "-name",
       "category",
       "-category",
-      "sellPrice",
-      "-sellPrice",
       "quantity",
       "-quantity",
       "createdAt",
