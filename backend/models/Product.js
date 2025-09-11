@@ -14,49 +14,61 @@ const productSchema = new mongoose.Schema(
       trim: true,
       maxlength: [50, "Category name cannot exceed 50 characters"],
     },
-    buyPrice: {
-      type: Number,
-      required: [true, "Buy price is required"],
-      min: [0, "Buy price cannot be negative"],
-    },
-    sellPrice: {
-      type: Number,
-      required: [true, "Sell price is required"],
-      min: [0, "Sell price cannot be negative"],
-      // Removed Mongoose-level price validation to avoid conflicts with updates
-      // Price validation is handled in the controller layer for better control
-    },
-    quantity: {
-      type: Number,
-      required: [true, "Quantity is required"],
-      min: [0, "Quantity cannot be negative"],
-      default: 0,
-    },
     description: {
       type: String,
       required: [true, "Product description is required"],
       trim: true,
       maxlength: [500, "Description cannot exceed 500 characters"],
     },
+    barcode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true,
+    },
     image: {
       type: String,
       trim: true,
     },
-    barcode: {
-      type: String,
-      unique: true,
-      sparse: true, // Allows null values while maintaining uniqueness
-      trim: true,
-      index: true, // For fast barcode lookups
+    // Current average prices (calculated from active batches)
+    currentBuyPrice: {
+      type: Number,
+      default: 0,
     },
+    currentSellPrice: {
+      type: Number,
+      default: 0,
+    },
+    // Total quantity (calculated from all active batches)
+    totalQuantity: {
+      type: Number,
+      default: 0,
+      min: [0, "Quantity cannot be negative"],
+    },
+    // Inventory tracking
     lowStockThreshold: {
       type: Number,
       default: 5,
       min: [0, "Low stock threshold cannot be negative"],
     },
+    reorderPoint: {
+      type: Number,
+      default: 10,
+    },
+    reorderQuantity: {
+      type: Number,
+      default: 20,
+    },
+    // Metadata
     isActive: {
       type: Boolean,
       default: true,
+    },
+    tags: [String],
+    supplier: {
+      preferred: String,
+      alternates: [String],
     },
   },
   {
@@ -66,89 +78,117 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for profit per unit
-productSchema.virtual("profitPerUnit").get(function () {
-  return this.sellPrice - this.buyPrice;
-});
-
-// Virtual for total inventory value (calculated from batches)
-productSchema.virtual("inventoryValue").get(function () {
-  return this.sellPrice * this.quantity;
-});
-
-// Virtual for low stock status
+// Virtuals
 productSchema.virtual("isLowStock").get(function () {
-  return this.quantity <= this.lowStockThreshold;
+  return this.totalQuantity <= this.lowStockThreshold;
 });
 
-// Virtual for average buy price (weighted by remaining quantity in batches)
-productSchema.virtual("averageBuyPrice").get(function () {
-  // This will be populated when needed via aggregation
-  return this.buyPrice;
+productSchema.virtual("needsReorder").get(function () {
+  return this.totalQuantity <= this.reorderPoint;
 });
 
-// Enhanced index for efficient searching including barcode
-productSchema.index({
-  name: "text",
-  category: "text",
-  description: "text",
-  barcode: "text",
+// Get inventory batches for this product
+productSchema.virtual("batches", {
+  ref: "InventoryBatch",
+  localField: "_id",
+  foreignField: "productId",
 });
+
+// Indexes
+productSchema.index({ name: "text", description: "text" });
 productSchema.index({ category: 1 });
-productSchema.index({ quantity: 1 });
-productSchema.index({ isActive: 1 });
 productSchema.index({ barcode: 1 });
-productSchema.index({ category: 1, isActive: 1 });
-productSchema.index({ quantity: 1, lowStockThreshold: 1 });
+productSchema.index({ isActive: 1 });
+productSchema.index({ totalQuantity: 1 });
 
-// Static method to get product with current inventory from batches
-productSchema.statics.findWithInventory = async function(productId) {
-  const InventoryBatch = mongoose.model('InventoryBatch');
-  
-  const product = await this.findById(productId);
-  if (!product) return null;
-  
-  // Calculate total quantity from active batches
-  const totalQuantity = await InventoryBatch.getTotalAvailableQuantity(productId);
-  
-  // Get average buy price from active batches
-  const avgBuyPriceResult = await InventoryBatch.aggregate([
+// Method to update calculated fields from batches
+productSchema.methods.updateFromBatches = async function () {
+  const InventoryBatch = mongoose.model("InventoryBatch");
+
+  const aggregation = await InventoryBatch.aggregate([
     {
       $match: {
-        productId: new mongoose.Types.ObjectId(productId),
+        productId: this._id,
+        status: "active",
         remainingQuantity: { $gt: 0 },
-        isActive: true
-      }
+      },
     },
     {
       $group: {
         _id: null,
-        weightedSum: {
-          $sum: { $multiply: ['$buyPrice', '$remainingQuantity'] }
+        totalQuantity: { $sum: "$remainingQuantity" },
+        weightedBuyPrice: {
+          $sum: {
+            $multiply: ["$buyPrice", "$remainingQuantity"],
+          },
         },
-        totalQuantity: { $sum: '$remainingQuantity' }
-      }
-    }
+        weightedSellPrice: {
+          $sum: {
+            $multiply: ["$sellPrice", "$remainingQuantity"],
+          },
+        },
+        totalRemainingQuantity: { $sum: "$remainingQuantity" },
+      },
+    },
   ]);
-  
-  const avgBuyPrice = avgBuyPriceResult.length > 0 && avgBuyPriceResult[0].totalQuantity > 0
-    ? avgBuyPriceResult[0].weightedSum / avgBuyPriceResult[0].totalQuantity
-    : product.buyPrice;
-  
-  // Update the product object with calculated values
-  product.quantity = totalQuantity;
-  product.buyPrice = avgBuyPrice;
-  
-  return product;
+
+  if (aggregation.length > 0) {
+    const stats = aggregation[0];
+    this.totalQuantity = stats.totalQuantity;
+    this.currentBuyPrice =
+      stats.totalRemainingQuantity > 0
+        ? (stats.weightedBuyPrice / stats.totalRemainingQuantity).toFixed(2)
+        : 0;
+    this.currentSellPrice =
+      stats.totalRemainingQuantity > 0
+        ? (stats.weightedSellPrice / stats.totalRemainingQuantity).toFixed(2)
+        : 0;
+  } else {
+    this.totalQuantity = 0;
+    this.currentBuyPrice = 0;
+    this.currentSellPrice = 0;
+  }
+
+  return this.save();
 };
 
-// Static method to update product quantities from batches
-productSchema.statics.updateQuantityFromBatches = async function(productId) {
-  const InventoryBatch = mongoose.model('InventoryBatch');
-  const totalQuantity = await InventoryBatch.getTotalAvailableQuantity(productId);
-  
-  await this.findByIdAndUpdate(productId, { quantity: totalQuantity });
-  return totalQuantity;
+// Static method to get products with batch details
+productSchema.statics.getWithBatchDetails = function () {
+  return this.aggregate([
+    {
+      $match: { isActive: true },
+    },
+    {
+      $lookup: {
+        from: "inventorybatches",
+        let: { productId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$productId", "$$productId"] },
+                  { $eq: ["$status", "active"] },
+                  { $gt: ["$remainingQuantity", 0] },
+                ],
+              },
+            },
+          },
+          {
+            $sort: { purchaseDate: 1 },
+          },
+        ],
+        as: "batches",
+      },
+    },
+    {
+      $addFields: {
+        oldestBatch: { $arrayElemAt: ["$batches", 0] },
+        newestBatch: { $arrayElemAt: ["$batches", -1] },
+        totalBatches: { $size: "$batches" },
+      },
+    },
+  ]);
 };
 
 const Product = mongoose.model("Product", productSchema);
