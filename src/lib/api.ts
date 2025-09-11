@@ -1,4 +1,5 @@
 import axios from "axios";
+import { mapBackendToFrontend, mapBackendProductsToFrontend, mapFrontendToBackend } from "./productMapper";
 
 // Create axios instance with base configuration
 const api = axios.create({
@@ -105,15 +106,16 @@ export interface Product {
   _id: string;
   name: string;
   category: string;
-  buyPrice: number;
-  sellPrice: number;
-  quantity: number;
+  buyPrice: number; // Frontend uses these fields
+  sellPrice: number; // Frontend uses these fields
+  quantity: number; // Frontend uses these fields
   description?: string;
   barcode?: string;
   lowStockThreshold: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  isLowStock?: boolean;
 }
 
 export interface Sale {
@@ -208,12 +210,17 @@ export const apiService = {
       console.log("✅ Products fetched:", response.data);
 
       if (response.data.success && response.data.data) {
+        const products = Array.isArray(response.data.data)
+          ? response.data.data
+          : response.data.data.products || [];
+        
+        // Map backend products to frontend format
+        const mappedProducts = mapBackendProductsToFrontend(products);
+        
         return {
           success: true,
           data: {
-            products: Array.isArray(response.data.data)
-              ? response.data.data
-              : response.data.data.products || [],
+            products: mappedProducts,
           },
         };
       }
@@ -228,6 +235,14 @@ export const apiService = {
   async getProduct(id: string) {
     try {
       const response = await api.get(`/products/${id}`);
+      if (response.data.success && response.data.data?.product) {
+        return {
+          ...response.data,
+          data: {
+            product: mapBackendToFrontend(response.data.data.product)
+          }
+        };
+      }
       return response.data;
     } catch (error) {
       console.error("❌ Error fetching product:", error);
@@ -241,10 +256,13 @@ export const apiService = {
     try {
       console.log("🚀 Creating product:", product);
 
+      // Map frontend product to backend format
+      const backendProduct = mapFrontendToBackend(product);
+
       // Clean up the product data before sending
       const cleanProduct = {
-        ...product,
-        barcode: product.barcode?.trim() || undefined,
+        ...backendProduct,
+        barcode: backendProduct.barcode?.trim() || undefined,
       };
 
       // Validate barcode if provided
@@ -265,6 +283,16 @@ export const apiService = {
       const response = await api.post("/products", cleanProduct);
       console.log("✅ Product created successfully");
 
+      // Map response back to frontend format
+      if (response.data.success && response.data.data?.product) {
+        return {
+          ...response.data,
+          data: {
+            product: mapBackendToFrontend(response.data.data.product)
+          }
+        };
+      }
+
       return response.data;
     } catch (error) {
       console.error("❌ Error creating product:", error);
@@ -282,12 +310,15 @@ export const apiService = {
         throw new Error("Invalid product ID");
       }
 
+      // Map frontend to backend format
+      const backendProduct = mapFrontendToBackend(product);
+
       // Clean and validate the update data
       const cleanProduct: any = {};
 
       // Only include defined values and clean them appropriately
-      Object.keys(product).forEach((key) => {
-        const value = product[key];
+      Object.keys(backendProduct).forEach((key) => {
+        const value = backendProduct[key];
 
         if (value !== undefined && value !== null) {
           switch (key) {
@@ -377,6 +408,16 @@ export const apiService = {
       const response = await api.put(`/products/${id}`, cleanProduct);
       console.log("✅ Product updated successfully");
 
+      // Map response back to frontend format
+      if (response.data.success && response.data.data?.product) {
+        return {
+          ...response.data,
+          data: {
+            product: mapBackendToFrontend(response.data.data.product)
+          }
+        };
+      }
+
       return response.data;
     } catch (error: any) {
       console.error("❌ Error updating product:", error);
@@ -441,6 +482,17 @@ export const apiService = {
         `/products/barcode/${encodeURIComponent(cleanedBarcode)}`
       );
       console.log("✅ API: Barcode search response:", response.data);
+      
+      // Map response to frontend format
+      if (response.data.success && response.data.data?.product) {
+        return {
+          ...response.data,
+          data: {
+            product: mapBackendToFrontend(response.data.data.product)
+          }
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error("❌ API: Error fetching product by barcode:", error);
@@ -464,6 +516,16 @@ export const apiService = {
         `/products/search?query=${encodeURIComponent(query)}`
       );
       console.log("✅ API: Search results:", response.data);
+
+      // Map products to frontend format
+      if (response.data.success && response.data.data?.products) {
+        return {
+          ...response.data,
+          data: {
+            products: mapBackendProductsToFrontend(response.data.data.products)
+          }
+        };
+      }
 
       return response.data;
     } catch (error) {

@@ -82,10 +82,29 @@ export const getSale = catchAsync(async (req, res, next) => {
 
 // Create new sale with FIFO allocation
 export const createSale = catchAsync(async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // Disable transactions for in-memory database
+  const isMemoryDB = process.env.USE_IN_MEMORY_DB === 'true' || process.env.MONGODB_URI === 'memory';
+  
+  if (!isMemoryDB) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-  try {
+    try {
+      return await createSaleWithSession(req, res, next, session);
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  } else {
+    // No transaction for in-memory DB
+    return await createSaleWithSession(req, res, next, null);
+  }
+});
+
+// Helper function to handle sale creation with or without session
+async function createSaleWithSession(req, res, next, session) {
     const {
       products,
       cashierName,
@@ -123,7 +142,9 @@ export const createSale = catchAsync(async (req, res, next) => {
       }
 
       // Get product details
-      const product = await Product.findById(item.productId).session(session);
+      const product = session 
+        ? await Product.findById(item.productId).session(session)
+        : await Product.findById(item.productId);
 
       if (!product) {
         throw new AppError(`Product not found: ${item.productId}`, 404);
@@ -143,10 +164,16 @@ export const createSale = catchAsync(async (req, res, next) => {
         .session(session);
 
       // Calculate total available quantity
-      const totalAvailable = availableBatches.reduce(
+      let totalAvailable = availableBatches.reduce(
         (sum, batch) => sum + batch.remainingQuantity,
         0
       );
+
+      // Fallback: If no batches exist but product has quantity, use simple mode
+      const useSimpleMode = availableBatches.length === 0 && product.totalQuantity > 0;
+      if (useSimpleMode) {
+        totalAvailable = product.totalQuantity;
+      }
 
       // Check if we have enough inventory
       if (totalAvailable < item.quantity) {
@@ -162,7 +189,29 @@ export const createSale = catchAsync(async (req, res, next) => {
       let itemCost = 0;
       let itemPrice = 0;
 
-      for (const batch of availableBatches) {
+      if (useSimpleMode) {
+        // Simple mode: use product prices directly
+        itemCost = product.currentBuyPrice * item.quantity;
+        itemPrice = product.currentSellPrice * item.quantity;
+        
+        // Update product quantity directly
+        product.totalQuantity -= item.quantity;
+        await product.save();
+        
+        // Create a virtual batch allocation for consistency
+        batchAllocations.push({
+          batchId: null,
+          batchNumber: "SIMPLE-MODE",
+          quantity: item.quantity,
+          buyPrice: product.currentBuyPrice,
+          sellPrice: product.currentSellPrice,
+          profit: itemPrice - itemCost,
+        });
+        
+        remainingToAllocate = 0;
+      } else {
+        // Normal FIFO mode with batches
+        for (const batch of availableBatches) {
         if (remainingToAllocate <= 0) break;
 
         const allocateFromBatch = Math.min(
@@ -193,13 +242,18 @@ export const createSale = catchAsync(async (req, res, next) => {
           batch.status = "depleted";
         }
 
-        await batch.save({ session });
+        if (session) {
+          await batch.save({ session });
+        } else {
+          await batch.save();
+        }
 
         // Add to totals
         itemCost += allocationCost;
         itemPrice += allocationPrice;
         remainingToAllocate -= allocateFromBatch;
       }
+      } // End of FIFO mode
 
       // Verify all quantity was allocated
       if (remainingToAllocate > 0) {
@@ -227,7 +281,10 @@ export const createSale = catchAsync(async (req, res, next) => {
       totalProfit += itemProfit;
 
       // Update product total quantity from remaining batches
-      await product.updateFromBatches();
+      // Skip this in simple mode as we already updated the quantity
+      if (!useSimpleMode) {
+        await product.updateFromBatches();
+      }
     }
 
     // Calculate final amounts with tax and discount
@@ -269,8 +326,12 @@ export const createSale = catchAsync(async (req, res, next) => {
       status: "completed",
     });
 
-    await sale.save({ session });
-    await session.commitTransaction();
+    if (session) {
+      await sale.save({ session });
+      await session.commitTransaction();
+    } else {
+      await sale.save();
+    }
 
     // Populate batch details for response
     const populatedSale = await Sale.findById(sale._id).populate(
@@ -294,13 +355,7 @@ export const createSale = catchAsync(async (req, res, next) => {
         },
       },
     });
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
-  }
-});
+}
 
 // Get recent sales
 export const getRecentSales = catchAsync(async (req, res, next) => {

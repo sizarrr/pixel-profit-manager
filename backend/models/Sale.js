@@ -5,7 +5,7 @@ const batchAllocationSchema = new mongoose.Schema(
     batchId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "InventoryBatch",
-      required: true,
+      required: false, // Optional for simple mode
     },
     batchNumber: String,
     quantity: {
