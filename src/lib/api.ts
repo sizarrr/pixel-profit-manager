@@ -3,7 +3,7 @@ import axios from "axios";
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: "/api/v1",
-  timeout: 30000, // Increased timeout for update operations
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -41,11 +41,7 @@ api.interceptors.response.use(
         ...response,
         data: {
           success: true,
-          data:
-            response.data.data?.product ||
-            response.data.data?.products ||
-            response.data.data ||
-            response.data.data,
+          data: response.data.data,
           message: response.data.message,
         },
       };
@@ -65,7 +61,6 @@ api.interceptors.response.use(
     if (error.response?.data) {
       const errorData = error.response.data;
 
-      // Create a detailed error object
       const transformedError = {
         ...error,
         response: {
@@ -100,7 +95,7 @@ api.interceptors.response.use(
   }
 );
 
-// Types
+// Enhanced Types with FIFO support
 export interface Product {
   _id: string;
   name: string;
@@ -112,6 +107,33 @@ export interface Product {
   barcode?: string;
   lowStockThreshold: number;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // FIFO-specific fields
+  currentBuyPrice?: number;
+  currentSellPrice?: number;
+  totalQuantity?: number;
+}
+
+export interface InventoryBatch {
+  _id: string;
+  productId: string;
+  batchNumber: string;
+  purchaseDate: string;
+  expiryDate?: string;
+  buyPrice: number;
+  sellPrice: number;
+  initialQuantity: number;
+  remainingQuantity: number;
+  supplierName?: string;
+  invoiceNumber?: string;
+  notes?: string;
+  status: "active" | "depleted" | "expired" | "cancelled";
+  costDetails?: {
+    shippingCost?: number;
+    taxAmount?: number;
+    otherCosts?: number;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -126,10 +148,15 @@ export interface Sale {
     total: number;
     batchAllocations?: {
       batchId: string;
+      batchNumber: string;
       quantity: number;
       buyPrice: number;
-      batchNumber: string;
+      sellPrice: number;
+      profit: number;
     }[];
+    totalCost?: number;
+    totalPrice?: number;
+    totalProfit?: number;
   }[];
   totalAmount: number;
   cashierName: string;
@@ -137,6 +164,14 @@ export interface Sale {
   receiptNumber: string;
   createdAt: string;
   updatedAt: string;
+  // FIFO-specific fields
+  subtotal?: number;
+  taxRate?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  totalCost?: number;
+  totalProfit?: number;
+  status?: "completed" | "refunded" | "partial_refund" | "cancelled";
 }
 
 export interface DashboardOverview {
@@ -241,13 +276,11 @@ export const apiService = {
     try {
       console.log("🚀 Creating product:", product);
 
-      // Clean up the product data before sending
       const cleanProduct = {
         ...product,
         barcode: product.barcode?.trim() || undefined,
       };
 
-      // Validate barcode if provided
       if (
         cleanProduct.barcode &&
         !barcodeUtils.validateBarcode(cleanProduct.barcode)
@@ -255,7 +288,6 @@ export const apiService = {
         throw new Error("Invalid barcode format");
       }
 
-      // Remove undefined values
       Object.keys(cleanProduct).forEach((key) => {
         if (cleanProduct[key] === undefined) {
           delete cleanProduct[key];
@@ -277,15 +309,12 @@ export const apiService = {
       console.log("🔄 Updating product:", id);
       console.log("📝 Update data:", product);
 
-      // Validate ID format
       if (!id || typeof id !== "string" || id.trim() === "") {
         throw new Error("Invalid product ID");
       }
 
-      // Clean and validate the update data
       const cleanProduct: any = {};
 
-      // Only include defined values and clean them appropriately
       Object.keys(product).forEach((key) => {
         const value = product[key];
 
@@ -294,7 +323,6 @@ export const apiService = {
             case "name":
             case "category":
             case "description":
-              // String fields - trim and validate length
               if (typeof value === "string") {
                 const trimmed = value.trim();
                 if (trimmed.length > 0) {
@@ -305,17 +333,15 @@ export const apiService = {
 
             case "buyPrice":
             case "sellPrice":
-              // Price fields - ensure they're valid numbers
               const numValue =
                 typeof value === "string" ? parseFloat(value) : Number(value);
               if (!isNaN(numValue) && numValue >= 0) {
-                cleanProduct[key] = Math.round(numValue * 100) / 100; // Round to 2 decimals
+                cleanProduct[key] = Math.round(numValue * 100) / 100;
               }
               break;
 
             case "quantity":
             case "lowStockThreshold":
-              // Integer fields
               const intValue =
                 typeof value === "string" ? parseInt(value) : Number(value);
               if (!isNaN(intValue) && intValue >= 0) {
@@ -324,7 +350,6 @@ export const apiService = {
               break;
 
             case "barcode":
-              // Special handling for barcode - can be empty string, null, or valid barcode
               if (value === "" || value === null) {
                 cleanProduct[key] = null;
               } else if (typeof value === "string") {
@@ -332,7 +357,6 @@ export const apiService = {
                 if (trimmed === "") {
                   cleanProduct[key] = null;
                 } else {
-                  // Validate barcode format
                   if (barcodeUtils.validateBarcode(trimmed)) {
                     cleanProduct[key] = trimmed;
                   } else {
@@ -343,32 +367,19 @@ export const apiService = {
               break;
 
             case "isActive":
-              // Boolean field
               cleanProduct[key] = Boolean(value);
               break;
 
             default:
-              // For any other fields, include as-is if they're not undefined/null
               cleanProduct[key] = value;
           }
         } else if (key === "barcode" && (value === null || value === "")) {
-          // Special case: explicitly setting barcode to null/empty
           cleanProduct[key] = null;
         }
       });
 
       console.log("🧹 Cleaned update data:", cleanProduct);
 
-      // Validate prices relationship if both are being updated or one is being updated
-      if (
-        cleanProduct.buyPrice !== undefined ||
-        cleanProduct.sellPrice !== undefined
-      ) {
-        // We can't validate the relationship here without knowing the current values
-        // The backend will handle this validation
-      }
-
-      // Make sure we have at least one field to update
       if (Object.keys(cleanProduct).length === 0) {
         console.log("⚠️ No valid fields to update");
         throw new Error("No valid fields to update");
@@ -381,7 +392,6 @@ export const apiService = {
     } catch (error: any) {
       console.error("❌ Error updating product:", error);
 
-      // Re-throw with more context
       if (error.response?.data?.message) {
         const enhancedError = new Error(error.response.data.message);
         enhancedError.response = error.response;
@@ -472,6 +482,117 @@ export const apiService = {
     }
   },
 
+  // Inventory/FIFO Methods
+  async addInventoryBatch(batchData: {
+    productId: string;
+    purchaseDate?: Date;
+    expiryDate?: Date;
+    buyPrice: number;
+    sellPrice: number;
+    quantity: number;
+    supplierName?: string;
+    invoiceNumber?: string;
+    notes?: string;
+    shippingCost?: number;
+    taxAmount?: number;
+    otherCosts?: number;
+  }) {
+    try {
+      console.log("🚀 Adding inventory batch:", batchData);
+
+      const requestData = {
+        productId: batchData.productId,
+        purchaseDate:
+          batchData.purchaseDate?.toISOString() || new Date().toISOString(),
+        expiryDate: batchData.expiryDate?.toISOString(),
+        buyPrice: Number(batchData.buyPrice),
+        sellPrice: Number(batchData.sellPrice),
+        quantity: Number(batchData.quantity),
+        supplierName: batchData.supplierName,
+        invoiceNumber: batchData.invoiceNumber,
+        notes: batchData.notes,
+        shippingCost: batchData.shippingCost || 0,
+        taxAmount: batchData.taxAmount || 0,
+        otherCosts: batchData.otherCosts || 0,
+      };
+
+      const response = await api.post("/inventory/batches", requestData);
+      console.log("✅ Inventory batch added successfully");
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error adding inventory batch:", error);
+      throw error;
+    }
+  },
+
+  async getProductBatches(productId: string) {
+    try {
+      console.log("🔍 Getting batches for product:", productId);
+
+      const response = await api.get(
+        `/inventory/products/${productId}/batches`
+      );
+      console.log("✅ Product batches fetched:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching product batches:", error);
+      throw error;
+    }
+  },
+
+  async getInventoryBatches(params?: {
+    page?: number;
+    limit?: number;
+    productId?: string;
+    status?: string;
+  }) {
+    try {
+      const response = await api.get("/inventory/batches", { params });
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching inventory batches:", error);
+      throw error;
+    }
+  },
+
+  async updateInventoryBatch(
+    batchId: string,
+    updates: Partial<InventoryBatch>
+  ) {
+    try {
+      const response = await api.patch(
+        `/inventory/batches/${batchId}`,
+        updates
+      );
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error updating inventory batch:", error);
+      throw error;
+    }
+  },
+
+  async getInventoryValuation() {
+    try {
+      const response = await api.get("/inventory/valuation");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching inventory valuation:", error);
+      throw error;
+    }
+  },
+
+  async getExpiringBatches(days: number = 30) {
+    try {
+      const response = await api.get(`/inventory/expiring?days=${days}`);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching expiring batches:", error);
+      throw error;
+    }
+  },
+
   // Sales
   async getSales(params?: {
     page?: number;
@@ -522,12 +643,65 @@ export const apiService = {
     totalAmount: number;
     cashierName: string;
     paymentMethod?: string;
+    customerName?: string;
+    customerPhone?: string;
+    taxRate?: number;
+    discountAmount?: number;
+    notes?: string;
   }) {
     try {
-      const response = await api.post("/sales", sale);
+      console.log("🚀 Creating FIFO sale:", sale);
+
+      // Ensure all numeric values are properly formatted
+      const saleData = {
+        ...sale,
+        products: sale.products.map((p) => ({
+          ...p,
+          quantity: Number(p.quantity),
+          sellPrice: Number(p.sellPrice),
+          total: Number(p.total),
+        })),
+        totalAmount: Number(sale.totalAmount),
+        taxRate: sale.taxRate ? Number(sale.taxRate) : 0,
+        discountAmount: sale.discountAmount ? Number(sale.discountAmount) : 0,
+        paymentMethod: sale.paymentMethod || "cash",
+      };
+
+      const response = await api.post("/sales", saleData);
+      console.log("✅ FIFO sale created successfully with batch allocations");
+
       return response.data;
     } catch (error) {
       console.error("❌ Error creating sale:", error);
+      throw error;
+    }
+  },
+
+  async getSalesBatchDetails(saleId: string) {
+    try {
+      const response = await api.get(`/sales/${saleId}/batches`);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching sale batch details:", error);
+      throw error;
+    }
+  },
+
+  async processSaleRefund(
+    saleId: string,
+    refundData: {
+      refundItems: Array<{
+        productId: string;
+        quantity: number;
+      }>;
+      refundReason: string;
+    }
+  ) {
+    try {
+      const response = await api.post(`/sales/${saleId}/refund`, refundData);
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error processing sale refund:", error);
       throw error;
     }
   },
@@ -548,6 +722,16 @@ export const apiService = {
       return response.data;
     } catch (error) {
       console.error("❌ Error fetching top products:", error);
+      throw error;
+    }
+  },
+
+  async getSalesProfit() {
+    try {
+      const response = await api.get("/sales/profit");
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error fetching sales profit:", error);
       throw error;
     }
   },

@@ -2,29 +2,38 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { apiService, Product as ApiProduct, Sale as ApiSale } from "../lib/api";
 
 // Utility function to calculate actual profit using FIFO batch allocations
-export const calculateActualProfit = (saleProduct: Sale['products'][0], fallbackProduct?: Product): number => {
+export const calculateActualProfit = (
+  saleProduct: Sale["products"][0],
+  fallbackProduct?: Product
+): number => {
   if (saleProduct.batchAllocations && saleProduct.batchAllocations.length > 0) {
     // Use actual FIFO batch costs
-    const totalCost = saleProduct.batchAllocations.reduce((cost, allocation) => {
-      return cost + (allocation.buyPrice * allocation.quantity);
-    }, 0);
+    const totalCost = saleProduct.batchAllocations.reduce(
+      (cost, allocation) => {
+        return cost + allocation.buyPrice * allocation.quantity;
+      },
+      0
+    );
     const totalRevenue = saleProduct.sellPrice * saleProduct.quantity;
     return totalRevenue - totalCost;
   } else if (fallbackProduct) {
     // Fallback to product buyPrice if no batch allocation data (for older sales)
-    return (saleProduct.sellPrice - fallbackProduct.buyPrice) * saleProduct.quantity;
+    return (
+      (saleProduct.sellPrice - fallbackProduct.buyPrice) * saleProduct.quantity
+    );
   }
   return 0;
 };
 
+// Enhanced Product interface with FIFO batch support
 export interface Product {
   id: string;
   _id: string; // Keep original MongoDB _id for backend operations
   name: string;
   category: string;
-  buyPrice: number;
-  sellPrice: number;
-  quantity: number;
+  buyPrice: number; // This is now the average/current buy price
+  sellPrice: number; // This is now the average/current sell price
+  quantity: number; // Total quantity from all active batches
   description: string;
   image?: string;
   barcode?: string;
@@ -32,8 +41,38 @@ export interface Product {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  // FIFO-specific fields
+  currentBuyPrice?: number; // Weighted average buy price from active batches
+  currentSellPrice?: number; // Weighted average sell price from active batches
+  totalQuantity?: number; // Same as quantity, for consistency
+  batches?: InventoryBatch[]; // Available batches for this product
 }
 
+// New InventoryBatch interface
+export interface InventoryBatch {
+  _id: string;
+  productId: string;
+  batchNumber: string;
+  purchaseDate: Date;
+  expiryDate?: Date;
+  buyPrice: number;
+  sellPrice: number;
+  initialQuantity: number;
+  remainingQuantity: number;
+  supplierName?: string;
+  invoiceNumber?: string;
+  notes?: string;
+  status: "active" | "depleted" | "expired" | "cancelled";
+  costDetails?: {
+    shippingCost?: number;
+    taxAmount?: number;
+    otherCosts?: number;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Enhanced Sale interface with FIFO batch tracking
 export interface Sale {
   id: string;
   products: {
@@ -42,18 +81,33 @@ export interface Sale {
     quantity: number;
     sellPrice: number;
     total: number;
+    // FIFO batch allocations
     batchAllocations?: {
       batchId: string;
+      batchNumber: string;
       quantity: number;
       buyPrice: number;
-      batchNumber: string;
+      sellPrice: number;
+      profit: number;
     }[];
+    // Aggregated FIFO values
+    totalCost?: number;
+    totalPrice?: number;
+    totalProfit?: number;
   }[];
   totalAmount: number;
   cashierName: string;
   paymentMethod: string;
   receiptNumber: string;
   date: Date;
+  // FIFO sale-level aggregations
+  totalCost?: number;
+  totalProfit?: number;
+  subtotal?: number;
+  taxRate?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  status?: "completed" | "refunded" | "partial_refund" | "cancelled";
 }
 
 interface DashboardData {
@@ -100,6 +154,19 @@ interface StoreContextType {
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   addSale: (sale: Omit<Sale, "id" | "date" | "receiptNumber">) => Promise<void>;
+  // FIFO-specific methods
+  addInventoryBatch: (batchData: {
+    productId: string;
+    purchaseDate?: Date;
+    expiryDate?: Date;
+    buyPrice: number;
+    sellPrice: number;
+    quantity: number;
+    supplierName?: string;
+    invoiceNumber?: string;
+    notes?: string;
+  }) => Promise<void>;
+  getProductBatches: (productId: string) => Promise<InventoryBatch[]>;
   getLowStockProducts: () => Product[];
   getTodaysSales: () => number;
   getMonthlyStats: () => { sales: number; profit: number };
@@ -129,31 +196,70 @@ const convertApiProduct = (apiProduct: ApiProduct): Product => ({
   _id: apiProduct._id, // Keep original MongoDB _id for backend operations
   name: apiProduct.name,
   category: apiProduct.category,
-  buyPrice: apiProduct.buyPrice,
-  sellPrice: apiProduct.sellPrice,
-  quantity: apiProduct.quantity,
+  buyPrice: apiProduct.currentBuyPrice || apiProduct.buyPrice || 0,
+  sellPrice: apiProduct.currentSellPrice || apiProduct.sellPrice || 0,
+  quantity: apiProduct.totalQuantity || apiProduct.quantity || 0,
   description: apiProduct.description || "",
   barcode: apiProduct.barcode,
-  lowStockThreshold: apiProduct.lowStockThreshold,
-  isActive: apiProduct.isActive,
+  lowStockThreshold: apiProduct.lowStockThreshold || 5,
+  isActive: apiProduct.isActive !== false,
   createdAt: new Date(apiProduct.createdAt),
   updatedAt: new Date(apiProduct.updatedAt),
+  // FIFO-specific fields
+  currentBuyPrice: apiProduct.currentBuyPrice,
+  currentSellPrice: apiProduct.currentSellPrice,
+  totalQuantity: apiProduct.totalQuantity,
 });
 
 // Helper function to convert API sale to local sale format
 const convertApiSale = (apiSale: ApiSale): Sale => ({
   id: apiSale._id,
-  products: apiSale.products,
+  products: apiSale.products.map((product) => ({
+    ...product,
+    // Ensure FIFO batch allocations are included
+    batchAllocations: product.batchAllocations || [],
+    totalCost: product.totalCost,
+    totalPrice: product.totalPrice,
+    totalProfit: product.totalProfit,
+  })),
   totalAmount: apiSale.totalAmount,
   cashierName: apiSale.cashierName,
   paymentMethod: apiSale.paymentMethod,
   receiptNumber: apiSale.receiptNumber,
   date: new Date(apiSale.createdAt),
+  // FIFO sale-level data
+  totalCost: apiSale.totalCost,
+  totalProfit: apiSale.totalProfit,
+  subtotal: apiSale.subtotal,
+  taxRate: apiSale.taxRate,
+  taxAmount: apiSale.taxAmount,
+  discountAmount: apiSale.discountAmount,
+  status: apiSale.status || "completed",
 });
 
-// Helper function to calculate profit for a sale
+// Helper function to calculate profit for a sale using FIFO data
 const calculateSaleProfit = (sale: Sale, products: Product[]): number => {
   return sale.products.reduce((saleProfit, saleProduct) => {
+    // Use actual FIFO profit if available
+    if (saleProduct.totalProfit !== undefined) {
+      return saleProfit + saleProduct.totalProfit;
+    }
+
+    // Fallback to batch allocations if available
+    if (
+      saleProduct.batchAllocations &&
+      saleProduct.batchAllocations.length > 0
+    ) {
+      const batchProfit = saleProduct.batchAllocations.reduce(
+        (profit, allocation) => {
+          return profit + allocation.profit;
+        },
+        0
+      );
+      return saleProfit + batchProfit;
+    }
+
+    // Last resort: use current product buy price (less accurate for FIFO)
     const originalProduct = products.find(
       (p) => p.id === saleProduct.productId
     );
@@ -163,6 +269,7 @@ const calculateSaleProfit = (sale: Sale, products: Product[]): number => {
         saleProduct.quantity;
       return saleProfit + Math.max(0, profit);
     }
+
     return saleProfit;
   }, 0);
 };
@@ -209,7 +316,12 @@ const getLast6MonthsData = (
       (sum, sale) => sum + sale.totalAmount,
       0
     );
+
+    // Use FIFO-calculated profits when available
     const totalProfit = monthSales.reduce((profit, sale) => {
+      if (sale.totalProfit !== undefined) {
+        return profit + sale.totalProfit;
+      }
       return profit + calculateSaleProfit(sale, products);
     }, 0);
 
@@ -282,12 +394,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
 
     try {
+      // First create the product
       const response = await apiService.createProduct({
         name: productData.name,
         category: productData.category,
         buyPrice: productData.buyPrice,
         sellPrice: productData.sellPrice,
-        quantity: productData.quantity,
+        quantity: 0, // Product starts with 0 quantity
         description: productData.description,
         barcode: productData.barcode,
         lowStockThreshold: productData.lowStockThreshold || 5,
@@ -296,7 +409,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (response.success) {
         const newProduct = convertApiProduct(response.data);
-        setProducts((prev) => [...prev, newProduct]);
+
+        // If initial quantity is provided, create an inventory batch
+        if (productData.quantity && productData.quantity > 0) {
+          await addInventoryBatch({
+            productId: newProduct._id,
+            buyPrice: productData.buyPrice,
+            sellPrice: productData.sellPrice,
+            quantity: productData.quantity,
+            supplierName: "Initial Stock",
+            notes: "Initial inventory batch",
+          });
+        }
+
+        // Refresh data to get updated product with batches
+        await refreshData();
       }
     } catch (err) {
       console.error("Error adding product:", err);
@@ -313,7 +440,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
 
     try {
-      // Prepare the data for the API call
       const apiUpdateData: any = {};
 
       // Map frontend Product fields to backend fields
@@ -324,8 +450,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         apiUpdateData.buyPrice = productData.buyPrice;
       if (productData.sellPrice !== undefined)
         apiUpdateData.sellPrice = productData.sellPrice;
-      if (productData.quantity !== undefined)
-        apiUpdateData.quantity = productData.quantity;
       if (productData.description !== undefined)
         apiUpdateData.description = productData.description;
       if (productData.barcode !== undefined)
@@ -335,29 +459,54 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       if (productData.isActive !== undefined)
         apiUpdateData.isActive = productData.isActive;
 
+      // Handle quantity updates specially - create inventory batch if increasing
+      if (productData.quantity !== undefined) {
+        const currentProduct = products.find((p) => p.id === id);
+        if (currentProduct && productData.quantity > currentProduct.quantity) {
+          const additionalQuantity =
+            productData.quantity - currentProduct.quantity;
+
+          // Create new inventory batch for additional stock
+          await addInventoryBatch({
+            productId: currentProduct._id,
+            buyPrice: productData.buyPrice || currentProduct.buyPrice,
+            sellPrice: productData.sellPrice || currentProduct.sellPrice,
+            quantity: additionalQuantity,
+            supplierName: "Stock Update",
+            notes: `Added ${additionalQuantity} units via product update`,
+          });
+        }
+        // Note: We don't handle quantity decreases here to preserve FIFO integrity
+        // Quantity decreases should only happen through sales
+      }
+
       console.log("📤 Sending to API:", apiUpdateData);
 
-      const response = await apiService.updateProduct(id, apiUpdateData);
+      if (Object.keys(apiUpdateData).length > 0) {
+        const response = await apiService.updateProduct(id, apiUpdateData);
 
-      if (response.success && response.data) {
-        console.log("✅ API response successful:", response.data);
-        const updatedProduct = convertApiProduct(response.data);
-        console.log("✅ Converted product:", updatedProduct);
+        if (response.success && response.data) {
+          console.log("✅ API response successful:", response.data);
+          const updatedProduct = convertApiProduct(response.data);
+          console.log("✅ Converted product:", updatedProduct);
 
-        setProducts((prev) => {
-          const newProducts = prev.map((product) =>
-            product.id === id ? updatedProduct : product
-          );
-          console.log("✅ Updated products state");
-          return newProducts;
-        });
-      } else {
-        throw new Error("Update response was not successful");
+          setProducts((prev) => {
+            const newProducts = prev.map((product) =>
+              product.id === id ? updatedProduct : product
+            );
+            console.log("✅ Updated products state");
+            return newProducts;
+          });
+        } else {
+          throw new Error("Update response was not successful");
+        }
       }
+
+      // Refresh data to get updated quantities from batches
+      await refreshData();
     } catch (err: any) {
       console.error("❌ Error updating product:", err);
 
-      // Extract meaningful error message
       let errorMessage = "Failed to update product";
       if (err.response?.data?.message) {
         errorMessage = err.response.data.message;
@@ -447,12 +596,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
 
     try {
-      // Coerce numeric values to avoid 400 on backend due to string numbers
-      const sanitizedProducts = saleData.products.map(p => ({
-        ...p,
+      // Prepare sale data with proper validation for FIFO processing
+      const sanitizedProducts = saleData.products.map((p) => ({
+        productId: p.productId,
+        productName: p.productName.trim(),
         quantity: Number(p.quantity),
         sellPrice: Number(p.sellPrice),
-        total: Number(p.total)
+        total: Number(p.total),
       }));
 
       const response = await apiService.createSale({
@@ -466,6 +616,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         const newSale = convertApiSale(response.data);
         setSales((prev) => [newSale, ...prev]);
 
+        // Refresh products to get updated quantities from FIFO processing
         const productsResponse = await apiService.getProducts();
         if (productsResponse.success) {
           setProducts(productsResponse.data.products.map(convertApiProduct));
@@ -479,6 +630,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       throw err;
     } finally {
       setLoading(false);
+    }
+  };
+
+  // New method to add inventory batches
+  const addInventoryBatch = async (batchData: {
+    productId: string;
+    purchaseDate?: Date;
+    expiryDate?: Date;
+    buyPrice: number;
+    sellPrice: number;
+    quantity: number;
+    supplierName?: string;
+    invoiceNumber?: string;
+    notes?: string;
+  }) => {
+    try {
+      console.log("🔄 Adding inventory batch:", batchData);
+
+      const response = await apiService.addInventoryBatch({
+        ...batchData,
+        purchaseDate: batchData.purchaseDate || new Date(),
+      });
+
+      if (response.success) {
+        console.log("✅ Inventory batch added successfully");
+        // Refresh data to update product quantities
+        await refreshData();
+      }
+    } catch (err) {
+      console.error("❌ Error adding inventory batch:", err);
+      throw err;
+    }
+  };
+
+  // New method to get product batches
+  const getProductBatches = async (
+    productId: string
+  ): Promise<InventoryBatch[]> => {
+    try {
+      const response = await apiService.getProductBatches(productId);
+      if (response.success) {
+        return response.data.batches || [];
+      }
+      return [];
+    } catch (err) {
+      console.error("❌ Error getting product batches:", err);
+      return [];
     }
   };
 
@@ -529,6 +727,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     const totalProfit = monthlySales.reduce((profit, sale) => {
+      // Use FIFO profit calculation
+      if (sale.totalProfit !== undefined) {
+        return profit + sale.totalProfit;
+      }
       return profit + calculateSaleProfit(sale, products);
     }, 0);
 
@@ -600,6 +802,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         updateProduct,
         deleteProduct,
         addSale,
+        addInventoryBatch,
+        getProductBatches,
         getLowStockProducts,
         getTodaysSales,
         getMonthlyStats,

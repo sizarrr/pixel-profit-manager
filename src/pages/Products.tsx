@@ -15,10 +15,14 @@ import {
   AlertTriangle,
   DollarSign,
   Settings,
+  Layers,
+  TrendingUp,
+  Archive,
 } from "lucide-react";
 import AddProductDialog from "@/components/products/AddProductDialog";
 import EditProductDialog from "@/components/products/EditProductDialog";
 import BulkOperationsDialog from "@/components/products/BulkOperationsDialog";
+import AddInventoryDialog from "@/components/products/AddInventoryDialog";
 
 const Products = () => {
   const { products, deleteProduct, getLowStockProducts } = useStore();
@@ -29,6 +33,10 @@ const Products = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [inventoryProduct, setInventoryProduct] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const lowStockProducts = getLowStockProducts();
   const categories = Array.from(new Set(products.map((p) => p.category)));
@@ -36,7 +44,9 @@ const Products = () => {
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchTerm.toLowerCase());
+      product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.barcode &&
+        product.barcode.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory =
       categoryFilter === "all" || product.category === categoryFilter;
     return matchesSearch && matchesCategory;
@@ -68,13 +78,19 @@ const Products = () => {
     setSelectedProducts([]);
   };
 
+  const handleAddInventory = (product: any) => {
+    setInventoryProduct({ id: product._id, name: product.name });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{t("products")}</h1>
-          <p className="text-gray-600">{t("manage_inventory")}</p>
+          <p className="text-gray-600">
+            {t("manage_inventory")} - FIFO System Enabled
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {selectedProducts.length > 0 && (
@@ -96,6 +112,30 @@ const Products = () => {
           </Button>
         </div>
       </div>
+
+      {/* FIFO System Info */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Layers className="w-5 h-5 text-blue-600 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-blue-900 mb-1">
+                FIFO Inventory System
+              </h4>
+              <p className="text-sm text-blue-700 mb-2">
+                Your store uses First-In-First-Out inventory management for
+                accurate cost tracking and profit calculations.
+              </p>
+              <div className="flex flex-wrap gap-2 text-xs text-blue-600">
+                <span>• Automatic batch tracking</span>
+                <span>• Accurate profit margins</span>
+                <span>• Expiration management</span>
+                <span>• Cost per sale precision</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Low Stock Alert */}
       {lowStockProducts.length > 0 && (
@@ -217,8 +257,24 @@ const Products = () => {
                     <Badge variant="secondary" className="mt-1">
                       {product.category}
                     </Badge>
+                    {product.barcode && (
+                      <div className="mt-1">
+                        <Badge variant="outline" className="text-xs font-mono">
+                          {product.barcode}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-1 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleAddInventory(product)}
+                      className="p-1 h-8 w-8 text-green-600 hover:text-green-700"
+                      title="Add Inventory Batch"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -250,13 +306,15 @@ const Products = () => {
                     <Package className="w-4 h-4 text-gray-500" />
                     <span
                       className={`text-sm font-medium ${
-                        product.quantity <= 5 ? "text-red-600" : "text-gray-700"
+                        product.quantity <= product.lowStockThreshold
+                          ? "text-red-600"
+                          : "text-gray-700"
                       }`}
                     >
                       {product.quantity} {t("in_stock")}
                     </span>
                   </div>
-                  {product.quantity <= 5 && (
+                  {product.quantity <= product.lowStockThreshold && (
                     <Badge
                       variant="outline"
                       className="text-red-600 border-red-300"
@@ -269,14 +327,29 @@ const Products = () => {
                 <div className="pt-2 border-t">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-xs text-gray-500">{t("buy_price")}</p>
-                      <p className="font-medium">${product.buyPrice}</p>
+                      <p className="text-xs text-gray-500">
+                        {product.currentBuyPrice !== undefined
+                          ? "Avg Buy Price"
+                          : t("buy_price")}
+                      </p>
+                      <p className="font-medium">
+                        $
+                        {(product.currentBuyPrice || product.buyPrice).toFixed(
+                          2
+                        )}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-gray-500">{t("sell_price")}</p>
+                      <p className="text-xs text-gray-500">
+                        {product.currentSellPrice !== undefined
+                          ? "Avg Sell Price"
+                          : t("sell_price")}
+                      </p>
                       <p className="font-bold text-green-600 flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
-                        {product.sellPrice}
+                        {(
+                          product.currentSellPrice || product.sellPrice
+                        ).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -285,8 +358,30 @@ const Products = () => {
                       {t("profit_per_unit")}
                     </p>
                     <p className="text-sm font-medium text-blue-600">
-                      ${(product.sellPrice - product.buyPrice).toFixed(2)}
+                      $
+                      {(
+                        (product.currentSellPrice || product.sellPrice) -
+                        (product.currentBuyPrice || product.buyPrice)
+                      ).toFixed(2)}
                     </p>
+                  </div>
+                </div>
+
+                {/* FIFO Indicator */}
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <Layers className="w-3 h-3" />
+                      <span>FIFO Tracked</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleAddInventory(product)}
+                      className="text-xs text-green-600 hover:text-green-700 p-1 h-6"
+                    >
+                      + Add Stock
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -338,6 +433,14 @@ const Products = () => {
         selectedProducts={selectedProducts}
         onClearSelection={clearSelection}
       />
+      {inventoryProduct && (
+        <AddInventoryDialog
+          isOpen={!!inventoryProduct}
+          onClose={() => setInventoryProduct(null)}
+          productId={inventoryProduct.id}
+          productName={inventoryProduct.name}
+        />
+      )}
     </div>
   );
 };
