@@ -393,7 +393,10 @@ export const apiService = {
       console.error("❌ Error updating product:", error);
 
       if (error.response?.data?.message) {
-        const enhancedError = new Error(error.response.data.message);
+        class EnhancedError extends Error {
+          response?: any;
+        }
+        const enhancedError = new EnhancedError(error.response.data.message);
         enhancedError.response = error.response;
         throw enhancedError;
       }
