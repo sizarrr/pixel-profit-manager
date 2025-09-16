@@ -1,4 +1,4 @@
-// backend/controllers/dashboardController.js - FIXED VERSION
+// backend/controllers/dashboardController.js - FIXED VERSION WITH ROBUST PROFIT CALCULATION
 import Product from "../models/Product.js";
 import Sale from "../models/Sale.js";
 import InventoryBatch from "../models/InventoryBatch.js";
@@ -260,53 +260,238 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
       return Array.isArray(defaultValue) ? defaultValue : [defaultValue];
     };
 
-    // Calculate profit data with error handling
-    let profitData = [{ totalProfit: 0, totalRevenue: 0 }];
+    // ROBUST PROFIT CALCULATION - Handle both FIFO and non-FIFO sales
+    let profitData = { totalProfit: 0, totalRevenue: 0 };
 
     try {
-      const profitAggregation = await Sale.aggregate([
+      console.log("💰 Starting profit calculation...");
+
+      // First, check if we have any sales with FIFO data
+      const salesWithFIFO = await Sale.findOne({
+        totalProfit: { $exists: true },
+      });
+      const hasFIFOData = salesWithFIFO !== null;
+
+      console.log("📊 FIFO data available:", hasFIFOData);
+
+      if (hasFIFOData) {
+        // Use FIFO profit data if available
+        const fifoProfit = await Sale.aggregate([
+          {
+            $match: {
+              createdAt: { $gte: start, $lte: end },
+              totalProfit: { $exists: true },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalProfit: {
+                $sum: {
+                  $cond: [{ $ne: ["$totalProfit", null] }, "$totalProfit", 0],
+                },
+              },
+              totalRevenue: {
+                $sum: {
+                  $cond: [{ $ne: ["$totalAmount", null] }, "$totalAmount", 0],
+                },
+              },
+            },
+          },
+        ]);
+
+        if (fifoProfit && fifoProfit.length > 0) {
+          profitData.totalProfit = fifoProfit[0].totalProfit || 0;
+          profitData.totalRevenue = fifoProfit[0].totalRevenue || 0;
+        }
+      }
+
+      // For sales without FIFO data or as a fallback, calculate estimated profit
+      const estimatedProfitResult = await Sale.aggregate([
         {
           $match: {
             createdAt: { $gte: start, $lte: end },
+            $or: [{ totalProfit: { $exists: false } }, { totalProfit: null }],
           },
         },
-        { $unwind: { path: "$products", preserveNullAndEmptyArrays: true } },
         {
-          $addFields: {
-            // Use totalProfit if available, otherwise estimate from price difference
-            itemProfit: {
-              $cond: {
-                if: { $ifNull: ["$products.totalProfit", false] },
-                then: "$products.totalProfit",
-                else: {
-                  $subtract: [
-                    { $ifNull: ["$products.total", 0] },
-                    {
-                      $multiply: [
-                        { $ifNull: ["$products.quantity", 0] },
-                        10, // Default estimated cost - you might want to join with Product here
-                      ],
-                    },
-                  ],
+          $unwind: {
+            path: "$products",
+            preserveNullAndEmptyArrays: false, // Skip empty products
+          },
+        },
+        {
+          $lookup: {
+            from: "products",
+            let: { productId: { $toObjectId: "$products.productId" } },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ["$_id", "$$productId"] },
                 },
               },
+              {
+                $project: {
+                  buyPrice: 1,
+                  currentBuyPrice: 1,
+                },
+              },
+            ],
+            as: "productInfo",
+          },
+        },
+        {
+          $addFields: {
+            productData: { $arrayElemAt: ["$productInfo", 0] },
+            sellAmount: {
+              $multiply: [
+                { $toDouble: { $ifNull: ["$products.sellPrice", 0] } },
+                { $toDouble: { $ifNull: ["$products.quantity", 0] } },
+              ],
+            },
+          },
+        },
+        {
+          $addFields: {
+            // Use currentBuyPrice if available (FIFO), otherwise use buyPrice
+            unitCost: {
+              $cond: [
+                { $ne: ["$productData.currentBuyPrice", null] },
+                { $toDouble: "$productData.currentBuyPrice" },
+                {
+                  $cond: [
+                    { $ne: ["$productData.buyPrice", null] },
+                    { $toDouble: "$productData.buyPrice" },
+                    {
+                      $multiply: [
+                        { $toDouble: { $ifNull: ["$products.sellPrice", 0] } },
+                        0.7,
+                      ],
+                    }, // 30% margin estimate
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $addFields: {
+            costAmount: {
+              $multiply: [
+                "$unitCost",
+                { $toDouble: { $ifNull: ["$products.quantity", 0] } },
+              ],
+            },
+            estimatedProfit: {
+              $subtract: [
+                "$sellAmount",
+                {
+                  $multiply: [
+                    "$unitCost",
+                    { $toDouble: { $ifNull: ["$products.quantity", 0] } },
+                  ],
+                },
+              ],
             },
           },
         },
         {
           $group: {
             _id: null,
-            totalProfit: { $sum: "$itemProfit" },
-            totalRevenue: { $sum: { $ifNull: ["$products.total", 0] } },
+            estimatedProfit: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$estimatedProfit", null] },
+                      { $not: { $isNaN: "$estimatedProfit" } },
+                    ],
+                  },
+                  "$estimatedProfit",
+                  0,
+                ],
+              },
+            },
+            totalRevenue: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$sellAmount", null] },
+                      { $not: { $isNaN: "$sellAmount" } },
+                    ],
+                  },
+                  "$sellAmount",
+                  0,
+                ],
+              },
+            },
           },
         },
       ]);
 
-      if (profitAggregation && profitAggregation.length > 0) {
-        profitData = profitAggregation;
+      if (estimatedProfitResult && estimatedProfitResult.length > 0) {
+        const estimatedProfit = estimatedProfitResult[0].estimatedProfit || 0;
+        const estimatedRevenue = estimatedProfitResult[0].totalRevenue || 0;
+
+        profitData.totalProfit += estimatedProfit;
+        profitData.totalRevenue += estimatedRevenue;
+
+        console.log("📊 Estimated profit added:", estimatedProfit);
       }
+
+      // Final validation to prevent NaN
+      if (
+        isNaN(profitData.totalProfit) ||
+        profitData.totalProfit === null ||
+        profitData.totalProfit === undefined
+      ) {
+        console.warn("⚠️ Profit calculation resulted in NaN, defaulting to 0");
+        profitData.totalProfit = 0;
+      }
+
+      if (
+        isNaN(profitData.totalRevenue) ||
+        profitData.totalRevenue === null ||
+        profitData.totalRevenue === undefined
+      ) {
+        console.warn("⚠️ Revenue calculation resulted in NaN, defaulting to 0");
+        profitData.totalRevenue = 0;
+      }
+
+      // Round to 2 decimal places
+      profitData.totalProfit = Math.round(profitData.totalProfit * 100) / 100;
+      profitData.totalRevenue = Math.round(profitData.totalRevenue * 100) / 100;
+
+      console.log("✅ Final profit data:", profitData);
     } catch (profitError) {
       console.error("❌ Profit calculation error:", profitError);
+      console.error("Error details:", profitError.stack);
+
+      // Fallback to simple revenue calculation
+      try {
+        const revenueOnly = await Sale.aggregate([
+          {
+            $match: {
+              createdAt: { $gte: start, $lte: end },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalRevenue: { $sum: { $ifNull: ["$totalAmount", 0] } },
+            },
+          },
+        ]);
+
+        if (revenueOnly && revenueOnly.length > 0) {
+          profitData.totalRevenue = revenueOnly[0].totalRevenue || 0;
+          // Estimate 20% profit margin as fallback
+          profitData.totalProfit = profitData.totalRevenue * 0.2;
+        }
+      } catch (revenueError) {
+        console.error("❌ Even revenue calculation failed:", revenueError);
+      }
     }
 
     // Format the response with safe data extraction
@@ -334,7 +519,11 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
           todayRevenue: 0,
         })[0],
       },
-      profit: profitData[0] || { totalProfit: 0, totalRevenue: 0 },
+      profit: {
+        totalProfit: profitData.totalProfit || 0,
+        totalRevenue: profitData.totalRevenue || 0,
+        profitMargin: 0,
+      },
       lowStockProducts: getSettledValue(lowStockProducts, []),
       recentSales: getSettledValue(recentSales, []),
       topProducts: getSettledValue(topProducts, []),
@@ -348,15 +537,24 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
       })),
     };
 
-    // Add profit margin calculation with safe division
-    const totalRevenue = overview.profit.totalRevenue || 0;
-    const totalProfit = overview.profit.totalProfit || 0;
-
-    if (totalRevenue > 0) {
-      overview.profit.profitMargin = (totalProfit / totalRevenue) * 100;
-    } else {
-      overview.profit.profitMargin = 0;
+    // Calculate profit margin safely
+    if (overview.profit.totalRevenue > 0) {
+      overview.profit.profitMargin =
+        Math.round(
+          (overview.profit.totalProfit / overview.profit.totalRevenue) * 10000
+        ) / 100;
     }
+
+    // Final NaN check on all numeric fields
+    overview.profit.totalProfit = isNaN(overview.profit.totalProfit)
+      ? 0
+      : overview.profit.totalProfit;
+    overview.profit.totalRevenue = isNaN(overview.profit.totalRevenue)
+      ? 0
+      : overview.profit.totalRevenue;
+    overview.profit.profitMargin = isNaN(overview.profit.profitMargin)
+      ? 0
+      : overview.profit.profitMargin;
 
     console.log("✅ Dashboard overview compiled successfully");
     console.log("📈 Overview summary:", {
@@ -364,6 +562,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
       totalSales: overview.sales.period.totalSales,
       totalRevenue: overview.sales.period.totalRevenue,
       totalProfit: overview.profit.totalProfit,
+      profitMargin: overview.profit.profitMargin,
       lowStockCount: overview.products.lowStockCount,
     });
 
