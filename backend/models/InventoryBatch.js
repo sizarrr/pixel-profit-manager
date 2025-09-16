@@ -153,6 +153,28 @@ inventoryBatchSchema.methods.consume = function (quantity) {
 
   return this.save();
 };
+// Add this static method to get total available quantity
+inventoryBatchSchema.statics.getTotalAvailableQuantity = async function (
+  productId
+) {
+  const result = await this.aggregate([
+    {
+      $match: {
+        productId: mongoose.Types.ObjectId(productId),
+        status: "active",
+        remainingQuantity: { $gt: 0 },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalQuantity: { $sum: "$remainingQuantity" },
+      },
+    },
+  ]);
+
+  return result.length > 0 ? result[0].totalQuantity : 0;
+};
 
 // Static method to get available batches for a product in FIFO order
 inventoryBatchSchema.statics.getAvailableBatchesFIFO = function (productId) {

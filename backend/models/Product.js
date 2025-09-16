@@ -152,6 +152,38 @@ productSchema.methods.updateFromBatches = async function () {
   return this.save();
 };
 
+// Add this static method to the Product schema
+productSchema.statics.updateQuantityFromBatches = async function (productId) {
+  const InventoryBatch = mongoose.model("InventoryBatch");
+
+  const aggregation = await InventoryBatch.aggregate([
+    {
+      $match: {
+        productId: mongoose.Types.ObjectId(productId),
+        status: "active",
+        remainingQuantity: { $gt: 0 },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalQuantity: { $sum: "$remainingQuantity" },
+      },
+    },
+  ]);
+
+  if (aggregation.length > 0) {
+    await this.findByIdAndUpdate(productId, {
+      quantity: aggregation[0].totalQuantity,
+      totalQuantity: aggregation[0].totalQuantity,
+    });
+  } else {
+    await this.findByIdAndUpdate(productId, {
+      quantity: 0,
+      totalQuantity: 0,
+    });
+  }
+};
 // Static method to get products with batch details
 productSchema.statics.getWithBatchDetails = function () {
   return this.aggregate([
