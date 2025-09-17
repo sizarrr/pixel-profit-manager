@@ -20,7 +20,15 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Package, Plus, DollarSign, Calendar, User } from "lucide-react";
+import {
+  Package,
+  Plus,
+  DollarSign,
+  Calendar,
+  User,
+  AlertCircle,
+} from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface AddInventoryDialogProps {
   isOpen: boolean;
@@ -90,27 +98,52 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
   const onSubmit = async (data: InventoryBatchFormData) => {
     console.log("Form submitted:", data);
     try {
+      // Validate all required fields
+      if (!data.productId) {
+        throw new Error("Product selection is required");
+      }
+
+      if (!data.supplierName || data.supplierName.trim() === "") {
+        throw new Error("Supplier name is required");
+      }
+
+      if (Number(data.buyPrice) <= 0) {
+        throw new Error("Buy price must be greater than 0");
+      }
+
+      if (Number(data.sellPrice) <= 0) {
+        throw new Error("Sell price must be greater than 0");
+      }
+
+      if (Number(data.quantity) <= 0) {
+        throw new Error("Quantity must be greater than 0");
+      }
+
+      // Prepare batch data with proper validation
       const batchData = {
         productId: data.productId,
         buyPrice: Number(data.buyPrice),
         sellPrice: Number(data.sellPrice),
         quantity: Number(data.quantity),
         supplierName: data.supplierName.trim(),
-        invoiceNumber: data.invoiceNumber.trim(),
-        purchaseDate: new Date(data.purchaseDate),
+        invoiceNumber: data.invoiceNumber?.trim() || undefined,
+        purchaseDate: data.purchaseDate
+          ? new Date(data.purchaseDate)
+          : new Date(),
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
-        notes: data.notes.trim(),
+        notes: data.notes?.trim() || "",
         shippingCost: Number(data.shippingCost) || 0,
         taxAmount: Number(data.taxAmount) || 0,
         otherCosts: Number(data.otherCosts) || 0,
       };
 
+      console.log("Sending batch data:", batchData);
+
       await addInventoryBatch(batchData);
 
       toast({
         title: t("success"),
-        description:
-          "Inventory batch added successfully! Stock will be processed using FIFO.",
+        description: `Inventory batch added successfully! ${data.quantity} units added to FIFO inventory.`,
       });
 
       form.reset();
@@ -139,7 +172,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     const quantity = Number(form.watch("quantity")) || 1;
 
     const additionalCostPerUnit =
-      (shippingCost + taxAmount + otherCosts) / quantity;
+      quantity > 0 ? (shippingCost + taxAmount + otherCosts) / quantity : 0;
     return buyPrice + additionalCostPerUnit;
   };
 
@@ -155,9 +188,14 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     return sellPrice > 0 ? (profit / sellPrice) * 100 : 0;
   };
 
+  const handleClose = () => {
+    form.reset();
+    onClose();
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
@@ -168,9 +206,17 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
           </DialogTitle>
         </DialogHeader>
 
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            This batch will be added to the FIFO inventory system. Oldest
+            batches will be sold first automatically.
+          </AlertDescription>
+        </Alert>
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Product Selection */}
+            {/* Product Selection - only show if not pre-selected */}
             {!productId && (
               <FormField
                 control={form.control}
@@ -178,7 +224,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                 rules={{ required: "Product selection is required" }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Product</FormLabel>
+                    <FormLabel>Product *</FormLabel>
                     <FormControl>
                       <select
                         {...field}
@@ -203,12 +249,18 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
               <FormField
                 control={form.control}
                 name="supplierName"
-                rules={{ required: "Supplier name is required" }}
+                rules={{
+                  required: "Supplier name is required",
+                  minLength: {
+                    value: 2,
+                    message: "Supplier name must be at least 2 characters",
+                  },
+                }}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
                       <User className="w-4 h-4" />
-                      Supplier Name
+                      Supplier Name *
                     </FormLabel>
                     <FormControl>
                       <Input placeholder="Enter supplier name" {...field} />
@@ -243,7 +295,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
-                      Purchase Date
+                      Purchase Date *
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -292,7 +344,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
                       <DollarSign className="w-4 h-4" />
-                      Buy Price ($)
+                      Buy Price ($) *
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -322,7 +374,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   validate: (value) => {
                     const totalCost = totalCostPerUnit();
                     return (
-                      value >= totalCost ||
+                      Number(value) >= totalCost ||
                       `Sell price must be at least ${totalCost.toFixed(
                         2
                       )} (total cost per unit)`
@@ -331,7 +383,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Sell Price ($)</FormLabel>
+                    <FormLabel>Sell Price ($) *</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -357,7 +409,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Quantity</FormLabel>
+                    <FormLabel>Quantity *</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -476,7 +528,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   <span className="ml-2 font-semibold">
                     $
                     {(
-                      totalCostPerUnit() * (form.watch("quantity") || 0)
+                      totalCostPerUnit() * (Number(form.watch("quantity")) || 0)
                     ).toFixed(2)}
                   </span>
                 </div>
@@ -529,14 +581,10 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" onClick={handleClose}>
                 {t("cancel")}
               </Button>
-              <Button
-                type="submit"
-                className="flex items-center gap-2"
-                disabled={!form.formState.isValid}
-              >
+              <Button type="submit" className="flex items-center gap-2">
                 <Plus className="w-4 h-4" />
                 Add Inventory Batch
               </Button>
@@ -547,5 +595,4 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     </Dialog>
   );
 };
-
 export default AddInventoryDialog;
