@@ -31,6 +31,22 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Legacy fields for initial product creation (will be moved to batches)
+    buyPrice: {
+      type: Number,
+      required: [true, "Buy price is required"],
+      min: [0, "Buy price cannot be negative"],
+    },
+    sellPrice: {
+      type: Number,
+      required: [true, "Sell price is required"],
+      min: [0, "Sell price cannot be negative"],
+    },
+    quantity: {
+      type: Number,
+      default: 0,
+      min: [0, "Quantity cannot be negative"],
+    },
     // Current average prices (calculated from active batches)
     currentBuyPrice: {
       type: Number,
