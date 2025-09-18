@@ -2,8 +2,7 @@ import InventoryBatch from "../models/InventoryBatch.js";
 import Product from "../models/Product.js";
 import { catchAsync, AppError } from "../middleware/errorHandler.js";
 import mongoose from "mongoose";
-
-// Add new inventory batch (receiving stock)
+// Add a new inventory batch
 export const addInventoryBatch = catchAsync(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -24,28 +23,49 @@ export const addInventoryBatch = catchAsync(async (req, res, next) => {
       notes,
     } = req.body;
 
+    // Enhanced validation
+    if (!productId) {
+      throw new AppError("Product ID is required", 400);
+    }
+
+    if (!supplierName || supplierName.trim() === "") {
+      throw new AppError("Supplier name is required", 400);
+    }
+
+    if (!buyPrice || Number(buyPrice) <= 0) {
+      throw new AppError("Buy price must be greater than 0", 400);
+    }
+
+    if (!sellPrice || Number(sellPrice) <= 0) {
+      throw new AppError("Sell price must be greater than 0", 400);
+    }
+
+    if (!quantity || Number(quantity) <= 0) {
+      throw new AppError("Quantity must be greater than 0", 400);
+    }
+
     // Validate product exists
     const product = await Product.findById(productId);
     if (!product) {
       throw new AppError("Product not found", 404);
     }
 
-    // Create inventory batch
+    // Create inventory batch with validated data
     const batch = new InventoryBatch({
       productId,
-      purchaseDate: purchaseDate || Date.now(),
-      expiryDate,
-      buyPrice,
-      sellPrice,
-      initialQuantity: quantity,
-      remainingQuantity: quantity,
-      supplierName,
-      invoiceNumber,
-      notes,
+      purchaseDate: purchaseDate ? new Date(purchaseDate) : Date.now(),
+      expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+      buyPrice: Number(buyPrice),
+      sellPrice: Number(sellPrice),
+      initialQuantity: Number(quantity),
+      remainingQuantity: Number(quantity),
+      supplierName: supplierName.trim(),
+      invoiceNumber: invoiceNumber?.trim(),
+      notes: notes?.trim(),
       costDetails: {
-        shippingCost,
-        taxAmount,
-        otherCosts,
+        shippingCost: Number(shippingCost) || 0,
+        taxAmount: Number(taxAmount) || 0,
+        otherCosts: Number(otherCosts) || 0,
       },
     });
 
@@ -65,6 +85,7 @@ export const addInventoryBatch = catchAsync(async (req, res, next) => {
     });
   } catch (error) {
     await session.abortTransaction();
+    console.error("Error in addInventoryBatch:", error);
     throw error;
   } finally {
     session.endSession();

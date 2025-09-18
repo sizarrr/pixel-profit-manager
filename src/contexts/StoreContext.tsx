@@ -447,15 +447,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       if (productData.category !== undefined)
         apiUpdateData.category = productData.category;
       if (productData.buyPrice !== undefined)
-        apiUpdateData.buyPrice = productData.buyPrice;
+        apiUpdateData.buyPrice = Number(productData.buyPrice);
       if (productData.sellPrice !== undefined)
-        apiUpdateData.sellPrice = productData.sellPrice;
+        apiUpdateData.sellPrice = Number(productData.sellPrice);
       if (productData.description !== undefined)
         apiUpdateData.description = productData.description;
       if (productData.barcode !== undefined)
-        apiUpdateData.barcode = productData.barcode;
+        apiUpdateData.barcode = productData.barcode || null;
       if (productData.lowStockThreshold !== undefined)
-        apiUpdateData.lowStockThreshold = productData.lowStockThreshold;
+        apiUpdateData.lowStockThreshold = Number(productData.lowStockThreshold);
       if (productData.isActive !== undefined)
         apiUpdateData.isActive = productData.isActive;
 

@@ -27,6 +27,7 @@ api.interceptors.request.use(
 );
 
 // Response interceptor to transform backend response format
+// Response interceptor to handle backend response format
 api.interceptors.response.use(
   (response) => {
     console.log(
@@ -34,6 +35,14 @@ api.interceptors.response.use(
         response.config.url
       } - ${response.status}`
     );
+
+    // Check if it's already in the expected format
+    if (
+      response.data &&
+      (response.data.success === true || response.data.success === false)
+    ) {
+      return response;
+    }
 
     // Transform backend response to match frontend expectations
     if (response.data && response.data.status === "success") {
@@ -46,6 +55,19 @@ api.interceptors.response.use(
         },
       };
     }
+
+    // For other successful responses without explicit success field
+    if (response.status >= 200 && response.status < 300) {
+      return {
+        ...response,
+        data: {
+          success: true,
+          data: response.data,
+          message: response.data.message || "Success",
+        },
+      };
+    }
+
     return response;
   },
   (error) => {
@@ -71,7 +93,7 @@ api.interceptors.response.use(
               errorData.message ||
               errorData.error ||
               `HTTP ${error.response.status} Error`,
-            error: errorData.error,
+            error: errorData.error || errorData.status,
             statusCode: error.response.status,
             details: errorData.details || errorData.stack,
           },
@@ -82,19 +104,22 @@ api.interceptors.response.use(
     }
 
     // Network or other errors
-    error.response = {
-      data: {
-        success: false,
-        message: error.message || "Network error occurred",
-        error: "NETWORK_ERROR",
-        statusCode: 0,
+    const networkError = {
+      ...error,
+      response: {
+        ...error.response,
+        data: {
+          success: false,
+          message: error.message || "Network error occurred",
+          error: "NETWORK_ERROR",
+          statusCode: 0,
+        },
       },
     };
 
-    return Promise.reject(error);
+    return Promise.reject(networkError);
   }
 );
-
 // Enhanced Types with FIFO support
 export interface Product {
   _id: string;
@@ -485,7 +510,6 @@ export const apiService = {
     }
   },
 
-  // Inventory/FIFO Methods
   async addInventoryBatch(batchData: {
     productId: string;
     purchaseDate?: Date;
@@ -503,24 +527,44 @@ export const apiService = {
     try {
       console.log("🚀 Adding inventory batch:", batchData);
 
+      // Ensure all required fields are properly formatted
       const requestData = {
         productId: batchData.productId,
-        purchaseDate:
-          batchData.purchaseDate?.toISOString() || new Date().toISOString(),
-        expiryDate: batchData.expiryDate?.toISOString(),
-        buyPrice: Number(batchData.buyPrice),
-        sellPrice: Number(batchData.sellPrice),
-        quantity: Number(batchData.quantity),
-        supplierName: batchData.supplierName,
-        invoiceNumber: batchData.invoiceNumber,
-        notes: batchData.notes,
-        shippingCost: batchData.shippingCost || 0,
-        taxAmount: batchData.taxAmount || 0,
-        otherCosts: batchData.otherCosts || 0,
+        purchaseDate: batchData.purchaseDate
+          ? batchData.purchaseDate instanceof Date
+            ? batchData.purchaseDate.toISOString()
+            : batchData.purchaseDate
+          : new Date().toISOString(),
+        buyPrice: Number(batchData.buyPrice) || 0,
+        sellPrice: Number(batchData.sellPrice) || 0,
+        quantity: Number(batchData.quantity) || 0,
+        supplierName: batchData.supplierName?.trim() || "Unknown Supplier",
+        invoiceNumber: batchData.invoiceNumber?.trim(),
+        notes: batchData.notes?.trim(),
+        shippingCost: Number(batchData.shippingCost) || 0,
+        taxAmount: Number(batchData.taxAmount) || 0,
+        otherCosts: Number(batchData.otherCosts) || 0,
       };
 
+      // Add expiryDate only if provided
+      if (batchData.expiryDate) {
+        requestData.expiryDate =
+          batchData.expiryDate instanceof Date
+            ? batchData.expiryDate.toISOString()
+            : batchData.expiryDate;
+      }
+
+      // Remove undefined fields
+      Object.keys(requestData).forEach((key) => {
+        if (requestData[key] === undefined) {
+          delete requestData[key];
+        }
+      });
+
+      console.log("📤 Sending inventory batch request:", requestData);
+
       const response = await api.post("/inventory/batches", requestData);
-      console.log("✅ Inventory batch added successfully");
+      console.log("✅ Inventory batch added successfully:", response.data);
 
       return response.data;
     } catch (error) {

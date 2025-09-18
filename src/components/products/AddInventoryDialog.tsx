@@ -128,9 +128,11 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
         supplierName: data.supplierName.trim(),
         invoiceNumber: data.invoiceNumber?.trim() || undefined,
         purchaseDate: data.purchaseDate
-          ? new Date(data.purchaseDate)
+          ? new Date(data.purchaseDate + "T00:00:00")
           : new Date(),
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+        expiryDate: data.expiryDate
+          ? new Date(data.expiryDate + "T00:00:00")
+          : undefined,
         notes: data.notes?.trim() || "",
         shippingCost: Number(data.shippingCost) || 0,
         taxAmount: Number(data.taxAmount) || 0,
