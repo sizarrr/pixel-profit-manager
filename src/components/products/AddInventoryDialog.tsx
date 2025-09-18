@@ -79,29 +79,64 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     },
   });
 
-  const selectedProduct = products.find(
-    (p) => p.id === form.watch("productId")
-  );
+  // Find the selected product to auto-fill prices
+  const selectedProduct = products.find((p) => {
+    // Try to match using both id and _id fields
+    return (
+      p.id === form.watch("productId") || p._id === form.watch("productId")
+    );
+  });
 
   React.useEffect(() => {
     if (productId) {
-      form.setValue("productId", productId);
+      console.log("🔍 Setting productId:", productId);
 
-      // Auto-fill prices from existing product if available
-      if (selectedProduct) {
-        form.setValue("sellPrice", selectedProduct.sellPrice);
-        form.setValue("buyPrice", selectedProduct.buyPrice);
+      // Find the product to get the correct MongoDB _id
+      const product = products.find(
+        (p) => p.id === productId || p._id === productId
+      );
+      console.log("🔍 Found product:", product);
+
+      if (product) {
+        // Use the MongoDB _id for the form
+        const mongoId = product._id || product.id;
+        console.log("🔍 Using MongoDB ID:", mongoId);
+
+        form.setValue("productId", mongoId);
+
+        // Auto-fill prices from existing product if available
+        form.setValue(
+          "sellPrice",
+          product.sellPrice || product.currentSellPrice || 0
+        );
+        form.setValue(
+          "buyPrice",
+          product.buyPrice || product.currentBuyPrice || 0
+        );
       }
     }
-  }, [productId, selectedProduct, form]);
+  }, [productId, products, form]);
 
   const onSubmit = async (data: InventoryBatchFormData) => {
-    console.log("Form submitted:", data);
+    console.log("📝 Form submitted with data:", data);
+
     try {
-      // Validate all required fields
-      if (!data.productId) {
+      // Enhanced validation
+      if (!data.productId || data.productId.trim() === "") {
         throw new Error("Product selection is required");
       }
+
+      // Validate that the productId exists in our products list
+      const product = products.find(
+        (p) => p._id === data.productId || p.id === data.productId
+      );
+      if (!product) {
+        throw new Error(
+          "Selected product not found. Please select a valid product."
+        );
+      }
+
+      console.log("✅ Product validation passed:", product.name);
 
       if (!data.supplierName || data.supplierName.trim() === "") {
         throw new Error("Supplier name is required");
@@ -119,9 +154,19 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
         throw new Error("Quantity must be greater than 0");
       }
 
+      // Validate sell price vs buy price
+      const totalCostPerUnit = calculateTotalCostPerUnit();
+      if (Number(data.sellPrice) < totalCostPerUnit) {
+        throw new Error(
+          `Sell price must be at least $${totalCostPerUnit.toFixed(
+            2
+          )} (total cost per unit)`
+        );
+      }
+
       // Prepare batch data with proper validation
       const batchData = {
-        productId: data.productId,
+        productId: product._id, // Always use MongoDB _id
         buyPrice: Number(data.buyPrice),
         sellPrice: Number(data.sellPrice),
         quantity: Number(data.quantity),
@@ -139,19 +184,20 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
         otherCosts: Number(data.otherCosts) || 0,
       };
 
-      console.log("Sending batch data:", batchData);
+      console.log("📤 Sending batch data to API:", batchData);
 
       await addInventoryBatch(batchData);
 
       toast({
         title: t("success"),
-        description: `Inventory batch added successfully! ${data.quantity} units added to FIFO inventory.`,
+        description: `Inventory batch added successfully! ${data.quantity} units added to FIFO inventory for ${product.name}.`,
+        duration: 5000,
       });
 
       form.reset();
       onClose();
     } catch (error: any) {
-      console.error("Error adding inventory batch:", error);
+      console.error("❌ Error adding inventory batch:", error);
 
       const errorMessage =
         error?.response?.data?.message ||
@@ -166,7 +212,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     }
   };
 
-  const totalCostPerUnit = () => {
+  const calculateTotalCostPerUnit = () => {
     const buyPrice = Number(form.watch("buyPrice")) || 0;
     const shippingCost = Number(form.watch("shippingCost")) || 0;
     const taxAmount = Number(form.watch("taxAmount")) || 0;
@@ -178,15 +224,15 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     return buyPrice + additionalCostPerUnit;
   };
 
-  const profitPerUnit = () => {
+  const calculateProfitPerUnit = () => {
     const sellPrice = Number(form.watch("sellPrice")) || 0;
-    const totalCost = totalCostPerUnit();
+    const totalCost = calculateTotalCostPerUnit();
     return sellPrice - totalCost;
   };
 
-  const profitMargin = () => {
+  const calculateProfitMargin = () => {
     const sellPrice = Number(form.watch("sellPrice")) || 0;
-    const profit = profitPerUnit();
+    const profit = calculateProfitPerUnit();
     return sellPrice > 0 ? (profit / sellPrice) * 100 : 0;
   };
 
@@ -223,7 +269,18 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
               <FormField
                 control={form.control}
                 name="productId"
-                rules={{ required: "Product selection is required" }}
+                rules={{
+                  required: "Product selection is required",
+                  validate: (value) => {
+                    const product = products.find(
+                      (p) => p._id === value || p.id === value
+                    );
+                    if (!product) {
+                      return "Please select a valid product";
+                    }
+                    return true;
+                  },
+                }}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Product *</FormLabel>
@@ -234,7 +291,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                       >
                         <option value="">Select a product</option>
                         {products.map((product) => (
-                          <option key={product.id} value={product.id}>
+                          <option key={product._id} value={product._id}>
                             {product.name} - {product.category}
                           </option>
                         ))}
@@ -244,6 +301,41 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   </FormItem>
                 )}
               />
+            )}
+
+            {/* Product Info Display */}
+            {selectedProduct && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <h4 className="font-medium text-gray-900 mb-2">
+                  Selected Product
+                </h4>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <p>
+                    <strong>Name:</strong> {selectedProduct.name}
+                  </p>
+                  <p>
+                    <strong>Category:</strong> {selectedProduct.category}
+                  </p>
+                  <p>
+                    <strong>Current Stock:</strong> {selectedProduct.quantity}{" "}
+                    units
+                  </p>
+                  <p>
+                    <strong>Current Sell Price:</strong> $
+                    {(
+                      selectedProduct.currentSellPrice ||
+                      selectedProduct.sellPrice
+                    ).toFixed(2)}
+                  </p>
+                  <p>
+                    <strong>Current Buy Price:</strong> $
+                    {(
+                      selectedProduct.currentBuyPrice ||
+                      selectedProduct.buyPrice
+                    ).toFixed(2)}
+                  </p>
+                </div>
+              </div>
             )}
 
             {/* Supplier Information */}
@@ -374,7 +466,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                     message: "Sell price must be greater than 0",
                   },
                   validate: (value) => {
-                    const totalCost = totalCostPerUnit();
+                    const totalCost = calculateTotalCostPerUnit();
                     return (
                       Number(value) >= totalCost ||
                       `Sell price must be at least ${totalCost.toFixed(
@@ -512,17 +604,19 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                 <div>
                   <span className="text-gray-600">Total Cost per Unit:</span>
                   <span className="ml-2 font-semibold">
-                    ${totalCostPerUnit().toFixed(2)}
+                    ${calculateTotalCostPerUnit().toFixed(2)}
                   </span>
                 </div>
                 <div>
                   <span className="text-gray-600">Profit per Unit:</span>
                   <span
                     className={`ml-2 font-semibold ${
-                      profitPerUnit() >= 0 ? "text-green-600" : "text-red-600"
+                      calculateProfitPerUnit() >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
                     }`}
                   >
-                    ${profitPerUnit().toFixed(2)}
+                    ${calculateProfitPerUnit().toFixed(2)}
                   </span>
                 </div>
                 <div>
@@ -530,7 +624,8 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   <span className="ml-2 font-semibold">
                     $
                     {(
-                      totalCostPerUnit() * (Number(form.watch("quantity")) || 0)
+                      calculateTotalCostPerUnit() *
+                      (Number(form.watch("quantity")) || 0)
                     ).toFixed(2)}
                   </span>
                 </div>
@@ -538,10 +633,12 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                   <span className="text-gray-600">Profit Margin:</span>
                   <span
                     className={`ml-2 font-semibold ${
-                      profitMargin() >= 0 ? "text-green-600" : "text-red-600"
+                      calculateProfitMargin() >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
                     }`}
                   >
-                    {profitMargin().toFixed(1)}%
+                    {calculateProfitMargin().toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -597,4 +694,5 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     </Dialog>
   );
 };
+
 export default AddInventoryDialog;

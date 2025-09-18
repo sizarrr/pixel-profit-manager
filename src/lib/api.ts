@@ -535,6 +535,11 @@ export const apiService = {
             ? batchData.purchaseDate.toISOString()
             : batchData.purchaseDate
           : new Date().toISOString(),
+        expiryDate: batchData.expiryDate
+          ? batchData.expiryDate instanceof Date
+            ? batchData.expiryDate.toISOString()
+            : batchData.expiryDate
+          : new Date().toISOString(),
         buyPrice: Number(batchData.buyPrice) || 0,
         sellPrice: Number(batchData.sellPrice) || 0,
         quantity: Number(batchData.quantity) || 0,
