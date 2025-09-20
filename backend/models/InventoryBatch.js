@@ -10,9 +10,9 @@ const inventoryBatchSchema = new mongoose.Schema(
     },
     batchNumber: {
       type: String,
-      required: [true, "Batch number is required"],
       unique: true,
       trim: true,
+      // Not required during creation as it will be auto-generated
     },
     purchaseDate: {
       type: Date,

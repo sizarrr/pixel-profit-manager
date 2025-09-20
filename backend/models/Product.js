@@ -31,6 +31,28 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Legacy fields for backward compatibility
+    buyPrice: {
+      type: Number,
+      required: [true, "Buy price is required"],
+      min: [0.01, "Buy price must be greater than 0"],
+    },
+    sellPrice: {
+      type: Number,
+      required: [true, "Sell price is required"],
+      min: [0.01, "Sell price must be greater than 0"],
+      validate: {
+        validator: function (value) {
+          return value >= this.buyPrice;
+        },
+        message: "Sell price must be greater than or equal to buy price",
+      },
+    },
+    quantity: {
+      type: Number,
+      default: 0,
+      min: [0, "Quantity cannot be negative"],
+    },
     // Current average prices (calculated from active batches)
     currentBuyPrice: {
       type: Number,
@@ -135,6 +157,7 @@ productSchema.methods.updateFromBatches = async function () {
   if (aggregation.length > 0) {
     const stats = aggregation[0];
     this.totalQuantity = stats.totalQuantity;
+    this.quantity = stats.totalQuantity; // Update legacy field
     this.currentBuyPrice =
       stats.totalRemainingQuantity > 0
         ? (stats.weightedBuyPrice / stats.totalRemainingQuantity).toFixed(2)
@@ -143,8 +166,12 @@ productSchema.methods.updateFromBatches = async function () {
       stats.totalRemainingQuantity > 0
         ? (stats.weightedSellPrice / stats.totalRemainingQuantity).toFixed(2)
         : 0;
+    // Update legacy fields with current values
+    this.buyPrice = this.currentBuyPrice || this.buyPrice;
+    this.sellPrice = this.currentSellPrice || this.sellPrice;
   } else {
     this.totalQuantity = 0;
+    this.quantity = 0; // Update legacy field
     this.currentBuyPrice = 0;
     this.currentSellPrice = 0;
   }
