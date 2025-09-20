@@ -1,3 +1,4 @@
+// backend/controllers/productController.js - FIXED VERSION
 import Product from "../models/Product.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import { catchAsync, AppError } from "../middleware/errorHandler.js";
@@ -183,8 +184,11 @@ export const getProductByBarcode = catchAsync(async (req, res, next) => {
   });
 });
 
-// Create new product
+// Create new product - FIXED VERSION
 export const createProduct = catchAsync(async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const productData = {
       ...req.body,
@@ -197,23 +201,22 @@ export const createProduct = catchAsync(async (req, res, next) => {
       const trimmedBarcode = productData.barcode.toString().trim();
 
       if (trimmedBarcode === "") {
-        return next(
-          new AppError("Barcode cannot be empty or just whitespace", 400)
-        );
+        delete productData.barcode; // Remove empty barcode
+      } else {
+        const existingProduct = await Product.findOne({
+          barcode: trimmedBarcode,
+          isActive: true,
+        });
+
+        if (existingProduct) {
+          await session.abortTransaction();
+          return next(
+            new AppError("Product with this barcode already exists", 400)
+          );
+        }
+
+        productData.barcode = trimmedBarcode;
       }
-
-      const existingProduct = await Product.findOne({
-        barcode: trimmedBarcode,
-        isActive: true,
-      });
-
-      if (existingProduct) {
-        return next(
-          new AppError("Product with this barcode already exists", 400)
-        );
-      }
-
-      productData.barcode = trimmedBarcode;
     }
 
     // Validate prices
@@ -225,10 +228,12 @@ export const createProduct = catchAsync(async (req, res, next) => {
       const sellPrice = parseFloat(productData.sellPrice);
 
       if (isNaN(buyPrice) || isNaN(sellPrice)) {
+        await session.abortTransaction();
         return next(new AppError("Invalid price values", 400));
       }
 
       if (sellPrice < buyPrice) {
+        await session.abortTransaction();
         return next(
           new AppError(
             "Sell price must be greater than or equal to buy price",
@@ -236,9 +241,60 @@ export const createProduct = catchAsync(async (req, res, next) => {
           )
         );
       }
+
+      productData.buyPrice = buyPrice;
+      productData.sellPrice = sellPrice;
     }
 
-    const product = await Product.create(productData);
+    // Extract initial quantity if provided
+    const initialQuantity = productData.quantity || 0;
+    delete productData.quantity; // Remove quantity from product data as it will be managed by batches
+
+    // Create the product first
+    const product = new Product({
+      ...productData,
+      quantity: 0, // Start with 0, will be updated from batch
+      totalQuantity: 0,
+    });
+
+    await product.save({ session });
+
+    console.log("✅ Product created with ID:", product._id);
+
+    // If initial quantity is provided, create an inventory batch
+    if (initialQuantity > 0) {
+      console.log(
+        "📦 Creating initial inventory batch for quantity:",
+        initialQuantity
+      );
+
+      const batch = new InventoryBatch({
+        productId: product._id, // Use the newly created product's _id
+        buyPrice: product.buyPrice,
+        sellPrice: product.sellPrice,
+        initialQuantity: initialQuantity,
+        remainingQuantity: initialQuantity,
+        supplierName: "Initial Stock",
+        invoiceNumber: `INIT-${Date.now()}`,
+        notes: "Initial inventory batch created with product",
+        purchaseDate: new Date(),
+        status: "active",
+      });
+
+      await batch.save({ session });
+
+      console.log("✅ Initial batch created with ID:", batch._id);
+
+      // Update product quantity from the batch
+      product.quantity = initialQuantity;
+      product.totalQuantity = initialQuantity;
+      product.currentBuyPrice = product.buyPrice;
+      product.currentSellPrice = product.sellPrice;
+
+      await product.save({ session });
+    }
+
+    await session.commitTransaction();
 
     res.status(201).json({
       status: "success",
@@ -247,6 +303,7 @@ export const createProduct = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
+    await session.abortTransaction();
     console.error("Product creation error:", error);
 
     // Handle specific MongoDB errors
@@ -264,44 +321,45 @@ export const createProduct = catchAsync(async (req, res, next) => {
     }
 
     return next(new AppError("Failed to create product", 500));
+  } finally {
+    session.endSession();
   }
 });
 
-// COMPLETELY REWRITTEN Update product function
-// FIXED updateProduct function with corrected price validation
+// Update product function - FIXED VERSION
 export const updateProduct = catchAsync(async (req, res, next) => {
   console.log("=== UPDATE PRODUCT START ===");
   console.log("Product ID:", req.params.id);
   console.log("Raw Request Body:", JSON.stringify(req.body, null, 2));
 
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     // 1. Validate ObjectId format first
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       console.log("❌ Invalid ObjectId format");
+      await session.abortTransaction();
       return next(new AppError("Invalid product ID format", 400));
     }
 
     // 2. Find existing product
-    const existingProduct = await Product.findById(req.params.id);
+    const existingProduct = await Product.findById(req.params.id).session(
+      session
+    );
     console.log("Existing product found:", !!existingProduct);
 
     if (!existingProduct) {
       console.log("❌ Product not found");
+      await session.abortTransaction();
       return next(new AppError("Product not found", 404));
     }
 
     if (!existingProduct.isActive) {
       console.log("❌ Product is not active");
+      await session.abortTransaction();
       return next(new AppError("Product not found", 404));
     }
-
-    console.log("✅ Existing product:", {
-      id: existingProduct._id,
-      name: existingProduct.name,
-      buyPrice: existingProduct.buyPrice,
-      sellPrice: existingProduct.sellPrice,
-      barcode: existingProduct.barcode,
-    });
 
     // 3. Build update data - ONLY include fields that are actually changing
     const updateData = {};
@@ -312,7 +370,6 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       "category",
       "buyPrice",
       "sellPrice",
-      "quantity",
       "description",
       "image",
       "barcode",
@@ -332,7 +389,7 @@ export const updateProduct = catchAsync(async (req, res, next) => {
           if (!isNaN(newNum) && newNum !== oldNum) {
             updateData[field] = newNum;
           }
-        } else if (field === "quantity" || field === "lowStockThreshold") {
+        } else if (field === "lowStockThreshold") {
           const newNum = parseInt(newValue);
           const oldNum = parseInt(oldValue);
           if (!isNaN(newNum) && newNum !== oldNum) {
@@ -357,80 +414,67 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       }
     });
 
-    console.log("📝 Fields to update:", Object.keys(updateData));
-    console.log("📝 Update data:", updateData);
+    // 4. Handle quantity updates through inventory batches
+    if (req.body.hasOwnProperty("quantity")) {
+      const newQuantity = parseInt(req.body.quantity);
+      const currentQuantity = existingProduct.quantity || 0;
 
-    // 4. Validate barcode if it's being changed
-    if (updateData.hasOwnProperty("barcode")) {
-      console.log("🔍 Validating barcode change...");
+      if (newQuantity > currentQuantity) {
+        const quantityToAdd = newQuantity - currentQuantity;
+        console.log(
+          "📦 Creating inventory batch for additional quantity:",
+          quantityToAdd
+        );
 
-      if (updateData.barcode === null || updateData.barcode === "") {
-        console.log("✅ Removing barcode (set to null)");
-        updateData.barcode = null;
-      } else {
-        const trimmedBarcode = String(updateData.barcode).trim();
+        const batch = new InventoryBatch({
+          productId: existingProduct._id,
+          buyPrice: updateData.buyPrice || existingProduct.buyPrice,
+          sellPrice: updateData.sellPrice || existingProduct.sellPrice,
+          initialQuantity: quantityToAdd,
+          remainingQuantity: quantityToAdd,
+          supplierName: "Stock Update",
+          invoiceNumber: `UPDATE-${Date.now()}`,
+          notes: `Added ${quantityToAdd} units via product update`,
+          purchaseDate: new Date(),
+          status: "active",
+        });
 
-        if (trimmedBarcode === "") {
-          console.log("❌ Barcode cannot be just whitespace");
-          return next(
-            new AppError("Barcode cannot be empty or just whitespace", 400)
-          );
-        }
+        await batch.save({ session });
 
-        // Check for barcode uniqueness only if it's different from current
-        if (trimmedBarcode !== existingProduct.barcode) {
-          console.log("🔍 Checking barcode uniqueness for:", trimmedBarcode);
-
-          const duplicateProduct = await Product.findOne({
-            barcode: trimmedBarcode,
-            isActive: true,
-            _id: { $ne: req.params.id },
-          });
-
-          if (duplicateProduct) {
-            console.log("❌ Duplicate barcode found");
-            return next(
-              new AppError("Product with this barcode already exists", 400)
-            );
-          }
-        }
-
-        updateData.barcode = trimmedBarcode;
+        // Update product quantity
+        updateData.quantity = newQuantity;
+        updateData.totalQuantity = newQuantity;
+      } else if (newQuantity < currentQuantity) {
+        console.log(
+          "⚠️ Quantity decrease requested - ignoring to preserve FIFO integrity"
+        );
       }
     }
 
-    // 5. FIXED PRICE VALIDATION - Ensure proper type handling
-    let finalBuyPrice, finalSellPrice;
+    // 5. Validate barcode if it's being changed
+    if (updateData.hasOwnProperty("barcode") && updateData.barcode !== null) {
+      const duplicateProduct = await Product.findOne({
+        barcode: updateData.barcode,
+        isActive: true,
+        _id: { $ne: req.params.id },
+      }).session(session);
 
-    // Determine final prices after update
-    if (updateData.hasOwnProperty("buyPrice")) {
-      finalBuyPrice = parseFloat(updateData.buyPrice);
-    } else {
-      finalBuyPrice = parseFloat(existingProduct.buyPrice);
+      if (duplicateProduct) {
+        console.log("❌ Duplicate barcode found");
+        await session.abortTransaction();
+        return next(
+          new AppError("Product with this barcode already exists", 400)
+        );
+      }
     }
 
-    if (updateData.hasOwnProperty("sellPrice")) {
-      finalSellPrice = parseFloat(updateData.sellPrice);
-    } else {
-      finalSellPrice = parseFloat(existingProduct.sellPrice);
-    }
+    // 6. Validate prices
+    let finalBuyPrice = updateData.buyPrice || existingProduct.buyPrice;
+    let finalSellPrice = updateData.sellPrice || existingProduct.sellPrice;
 
-    console.log("💰 Price validation:");
-    console.log("  - Final buy price:", finalBuyPrice, typeof finalBuyPrice);
-    console.log("  - Final sell price:", finalSellPrice, typeof finalSellPrice);
-
-    // Validate that prices are numbers
-    if (isNaN(finalBuyPrice) || isNaN(finalSellPrice)) {
-      console.log("❌ Invalid price values - NaN detected");
-      console.log("  - finalBuyPrice isNaN:", isNaN(finalBuyPrice));
-      console.log("  - finalSellPrice isNaN:", isNaN(finalSellPrice));
-      return next(new AppError("Invalid price values", 400));
-    }
-
-    // Validate price relationship
     if (finalSellPrice < finalBuyPrice) {
       console.log("❌ Sell price lower than buy price");
-      console.log(`  - Sell: $${finalSellPrice}, Buy: $${finalBuyPrice}`);
+      await session.abortTransaction();
       return next(
         new AppError(
           `Sell price ($${finalSellPrice}) must be greater than or equal to buy price ($${finalBuyPrice})`,
@@ -439,22 +483,10 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       );
     }
 
-    console.log("✅ Price validation passed");
-
-    // 6. Validate quantity if being updated
-    if (updateData.hasOwnProperty("quantity")) {
-      const quantity = parseInt(updateData.quantity);
-      if (isNaN(quantity) || quantity < 0) {
-        console.log("❌ Invalid quantity");
-        return next(
-          new AppError("Quantity must be a non-negative number", 400)
-        );
-      }
-    }
-
     // 7. If no fields to update, return current product
     if (Object.keys(updateData).length === 0) {
       console.log("⚠️ No fields to update");
+      await session.abortTransaction();
       return res.status(200).json({
         status: "success",
         data: {
@@ -463,89 +495,21 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       });
     }
 
-    // 8.a Ensure legacy stock (pre-batch) is captured as an initial batch
-    const existingActiveQty = await InventoryBatch.getTotalAvailableQuantity(
-      existingProduct._id
-    );
-    if (existingActiveQty === 0 && Number(existingProduct.quantity) > 0) {
-      console.log(
-        "🧭 Capturing legacy stock into initial batch to enable FIFO"
-      );
-      await InventoryBatch.create({
-        productId: existingProduct._id,
-        buyPrice: parseFloat(existingProduct.buyPrice),
-        initialQuantity: Number(existingProduct.quantity),
-        remainingQuantity: Number(existingProduct.quantity),
-        purchaseDate:
-          existingProduct.createdAt || new Date(Date.now() - 24 * 3600 * 1000),
-        supplierName: "Legacy stock import",
-        notes: "Auto-created from existing product.quantity to initialize FIFO",
-      });
-    }
-
-    // 8.b If quantity is being increased, create an inventory batch instead of direct set
-    let updatedProduct;
-    const isQuantityProvided = updateData.hasOwnProperty("quantity");
-    if (isQuantityProvided) {
-      const newQuantity = parseInt(updateData.quantity);
-      delete updateData.quantity; // prevent direct quantity mutation
-
-      if (newQuantity > existingProduct.quantity) {
-        const quantityToAdd = newQuantity - existingProduct.quantity;
-        console.log(
-          "📦 Detected restock. Creating inventory batch for +",
-          quantityToAdd
-        );
-
-        // Determine buyPrice to use for this new batch
-        const batchBuyPrice = updateData.hasOwnProperty("buyPrice")
-          ? parseFloat(updateData.buyPrice)
-          : parseFloat(existingProduct.buyPrice);
-
-        // Create inventory batch to honor FIFO
-        await InventoryBatch.create({
-          productId: existingProduct._id,
-          batchNumber: undefined, // auto-generate
-          buyPrice: batchBuyPrice,
-          initialQuantity: quantityToAdd,
-          remainingQuantity: quantityToAdd,
-          purchaseDate: new Date(),
-          supplierName: "Manual restock via product update",
-          notes: "Auto-generated to preserve FIFO",
-        });
-
-        // Recompute product quantity from batches after restock
-        await Product.updateQuantityFromBatches(existingProduct._id);
-      } else if (newQuantity < existingProduct.quantity) {
-        console.log(
-          "⚠️ Quantity decrease requested. Ignoring direct decrease to protect FIFO; quantities are derived from batches."
-        );
-      }
-    }
-
-    // Perform the remaining updates (name, prices, etc.)
-    console.log("🚀 Performing database update...");
-
-    updatedProduct = await Product.findByIdAndUpdate(
+    // 8. Perform the update
+    const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
       updateData,
       {
         new: true,
         runValidators: true,
+        session,
       }
     );
 
-    if (!updatedProduct) {
-      console.log("❌ Product not found after update");
-      return next(new AppError("Product not found", 404));
-    }
+    await session.commitTransaction();
 
     console.log("✅ Product updated successfully");
 
-    // 9. After any potential restock, ensure quantity is in sync with batches
-    await Product.updateQuantityFromBatches(updatedProduct._id);
-
-    // 10. Return success response
     res.status(200).json({
       status: "success",
       data: {
@@ -553,6 +517,7 @@ export const updateProduct = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
+    await session.abortTransaction();
     console.error("=== PRODUCT UPDATE ERROR ===");
     console.error("Error:", error);
 
@@ -573,6 +538,8 @@ export const updateProduct = catchAsync(async (req, res, next) => {
     // Generic error
     console.log("❌ Unexpected error");
     return next(new AppError("Failed to update product", 500));
+  } finally {
+    session.endSession();
   }
 });
 
@@ -630,49 +597,88 @@ export const getCategories = catchAsync(async (req, res, next) => {
 
 // Update product quantity (for inventory management)
 export const updateQuantity = catchAsync(async (req, res, next) => {
-  // Validate ObjectId format
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return next(new AppError("Invalid product ID format", 400));
-  }
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  const { quantity, operation = "set" } = req.body;
-
-  if (!quantity && quantity !== 0) {
-    return next(new AppError("Quantity is required", 400));
-  }
-
-  let updateOperation;
-  if (operation === "add") {
-    updateOperation = { $inc: { quantity } };
-  } else if (operation === "subtract") {
-    updateOperation = { $inc: { quantity: -quantity } };
-  } else {
-    updateOperation = { quantity };
-  }
-
-  const product = await Product.findByIdAndUpdate(
-    req.params.id,
-    updateOperation,
-    {
-      new: true,
-      runValidators: true,
+  try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      await session.abortTransaction();
+      return next(new AppError("Invalid product ID format", 400));
     }
-  );
 
-  if (!product || !product.isActive) {
-    return next(new AppError("Product not found", 404));
+    const { quantity, operation = "add" } = req.body;
+
+    if (!quantity && quantity !== 0) {
+      await session.abortTransaction();
+      return next(new AppError("Quantity is required", 400));
+    }
+
+    const product = await Product.findById(req.params.id).session(session);
+
+    if (!product || !product.isActive) {
+      await session.abortTransaction();
+      return next(new AppError("Product not found", 404));
+    }
+
+    if (operation === "add" || operation === "set") {
+      const quantityToAdd =
+        operation === "set" ? quantity - (product.quantity || 0) : quantity;
+
+      if (quantityToAdd > 0) {
+        // Create inventory batch for added quantity
+        const batch = new InventoryBatch({
+          productId: product._id,
+          buyPrice: product.buyPrice,
+          sellPrice: product.sellPrice,
+          initialQuantity: quantityToAdd,
+          remainingQuantity: quantityToAdd,
+          supplierName: "Inventory Update",
+          invoiceNumber: `INV-${Date.now()}`,
+          notes: `${
+            operation === "set" ? "Set" : "Added"
+          } ${quantityToAdd} units via quantity update`,
+          purchaseDate: new Date(),
+          status: "active",
+        });
+
+        await batch.save({ session });
+
+        // Update product quantity
+        product.quantity = (product.quantity || 0) + quantityToAdd;
+        product.totalQuantity = product.quantity;
+        await product.save({ session });
+      }
+    } else if (operation === "subtract") {
+      // For subtraction, we should ideally process through sales
+      // But for direct quantity reduction, we'll just update the quantity
+      const newQuantity = product.quantity - quantity;
+
+      if (newQuantity < 0) {
+        await session.abortTransaction();
+        return next(new AppError("Insufficient stock", 400));
+      }
+
+      product.quantity = newQuantity;
+      product.totalQuantity = newQuantity;
+      await product.save({ session });
+    }
+
+    await session.commitTransaction();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        product,
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("Error updating quantity:", error);
+    return next(new AppError("Failed to update quantity", 500));
+  } finally {
+    session.endSession();
   }
-
-  if (product.quantity < 0) {
-    return next(new AppError("Insufficient stock", 400));
-  }
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      product,
-    },
-  });
 });
 
 // Get products statistics

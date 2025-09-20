@@ -1,3 +1,4 @@
+// backend/models/InventoryBatch.js - FIXED VERSION
 import mongoose from "mongoose";
 
 const inventoryBatchSchema = new mongoose.Schema(
@@ -12,7 +13,7 @@ const inventoryBatchSchema = new mongoose.Schema(
       type: String,
       unique: true,
       trim: true,
-      // Not required during creation as it will be auto-generated
+      // Auto-generated, not required during creation
     },
     purchaseDate: {
       type: Date,
@@ -57,6 +58,7 @@ const inventoryBatchSchema = new mongoose.Schema(
     supplierName: {
       type: String,
       trim: true,
+      default: "Unknown Supplier",
       maxlength: [100, "Supplier name cannot exceed 100 characters"],
     },
     invoiceNumber: {
@@ -117,21 +119,35 @@ inventoryBatchSchema.index({ productId: 1, status: 1, remainingQuantity: 1 });
 inventoryBatchSchema.index({ batchNumber: 1 });
 inventoryBatchSchema.index({ status: 1 });
 
-// Generate batch number before saving
+// Generate batch number before saving - IMPROVED VERSION
 inventoryBatchSchema.pre("save", async function (next) {
   if (!this.batchNumber) {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
+    const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
     const random = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    this.batchNumber = `BATCH-${year}${month}${day}-${random}`;
+    // More unique batch number with timestamp and random string
+    this.batchNumber = `BATCH-${year}${month}${day}-${hours}${minutes}${seconds}${milliseconds}-${random}`;
   }
 
   // Auto-update status based on quantity
   if (this.remainingQuantity === 0 && this.status === "active") {
     this.status = "depleted";
+  }
+
+  // Check if batch is expired
+  if (
+    this.expiryDate &&
+    this.expiryDate < new Date() &&
+    this.status === "active"
+  ) {
+    this.status = "expired";
   }
 
   next();
@@ -153,6 +169,7 @@ inventoryBatchSchema.methods.consume = function (quantity) {
 
   return this.save();
 };
+
 // Add this static method to get total available quantity
 inventoryBatchSchema.statics.getTotalAvailableQuantity = async function (
   productId
