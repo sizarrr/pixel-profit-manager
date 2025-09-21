@@ -528,17 +528,12 @@ export const apiService = {
       console.log("🚀 Adding inventory batch:", batchData);
 
       // Ensure all required fields are properly formatted
-      const requestData = {
+      const requestData: any = {
         productId: batchData.productId,
         purchaseDate: batchData.purchaseDate
           ? batchData.purchaseDate instanceof Date
             ? batchData.purchaseDate.toISOString()
             : batchData.purchaseDate
-          : new Date().toISOString(),
-        expiryDate: batchData.expiryDate
-          ? batchData.expiryDate instanceof Date
-            ? batchData.expiryDate.toISOString()
-            : batchData.expiryDate
           : new Date().toISOString(),
         buyPrice: Number(batchData.buyPrice) || 0,
         sellPrice: Number(batchData.sellPrice) || 0,
@@ -551,7 +546,7 @@ export const apiService = {
         otherCosts: Number(batchData.otherCosts) || 0,
       };
 
-      // Add expiryDate only if provided
+      // Only add expiryDate if it's actually provided and valid
       if (batchData.expiryDate) {
         requestData.expiryDate =
           batchData.expiryDate instanceof Date

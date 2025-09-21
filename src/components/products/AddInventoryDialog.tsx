@@ -165,7 +165,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
       }
 
       // Prepare batch data with proper validation
-      const batchData = {
+      const batchData: any = {
         productId: product._id, // Always use MongoDB _id
         buyPrice: Number(data.buyPrice),
         sellPrice: Number(data.sellPrice),
@@ -175,9 +175,6 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
         purchaseDate: data.purchaseDate
           ? new Date(data.purchaseDate + "T00:00:00")
           : new Date(),
-        expiryDate: data.expiryDate
-          ? new Date(data.expiryDate + "T00:00:00")
-          : undefined,
         notes: data.notes?.trim() || "",
         shippingCost: Number(data.shippingCost) || 0,
         taxAmount: Number(data.taxAmount) || 0,
