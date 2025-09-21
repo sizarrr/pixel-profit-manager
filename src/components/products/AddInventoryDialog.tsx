@@ -62,9 +62,13 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
   const { t } = useLanguage();
   const { toast } = useToast();
 
+  // Debug log to see what we're receiving
+  console.log("AddInventoryDialog props:", { productId, productName, isOpen });
+  console.log("Available products:", products);
+
   const form = useForm<InventoryBatchFormData>({
     defaultValues: {
-      productId: productId || "",
+      productId: "",
       buyPrice: 0,
       sellPrice: 0,
       quantity: 1,
@@ -98,7 +102,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
       console.log("🔍 Found product:", product);
 
       if (product) {
-        // Use the MongoDB _id for the form
+        // Use the MongoDB _id for the form - ensure it's the _id field
         const mongoId = product._id || product.id;
         console.log("🔍 Using MongoDB ID:", mongoId);
 
@@ -121,15 +125,18 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
     console.log("📝 Form submitted with data:", data);
 
     try {
-      // Enhanced validation
-      if (!data.productId || data.productId.trim() === "") {
+      // Enhanced validation - Check if we have a productId from props or form
+      const actualProductId = productId || data.productId;
+
+      if (!actualProductId || actualProductId.trim() === "") {
         throw new Error("Product selection is required");
       }
 
       // Validate that the productId exists in our products list
       const product = products.find(
-        (p) => p._id === data.productId || p.id === data.productId
+        (p) => p._id === actualProductId || p.id === actualProductId
       );
+
       if (!product) {
         throw new Error(
           "Selected product not found. Please select a valid product."
@@ -137,6 +144,7 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
       }
 
       console.log("✅ Product validation passed:", product.name);
+      console.log("✅ Using Product ID:", product._id);
 
       if (!data.supplierName || data.supplierName.trim() === "") {
         throw new Error("Supplier name is required");
@@ -158,15 +166,15 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
       const totalCostPerUnit = calculateTotalCostPerUnit();
       if (Number(data.sellPrice) < totalCostPerUnit) {
         throw new Error(
-          `Sell price must be at least $${totalCostPerUnit.toFixed(
+          `Sell price must be at least ${totalCostPerUnit.toFixed(
             2
           )} (total cost per unit)`
         );
       }
 
-      // Prepare batch data with proper validation
+      // Prepare batch data with proper validation - use the found product's _id
       const batchData: any = {
-        productId: product._id, // Always use MongoDB _id
+        productId: product._id, // Always use MongoDB _id from the found product
         buyPrice: Number(data.buyPrice),
         sellPrice: Number(data.sellPrice),
         quantity: Number(data.quantity),
@@ -181,7 +189,13 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
         otherCosts: Number(data.otherCosts) || 0,
       };
 
+      // Only add expiryDate if it's actually provided
+      if (data.expiryDate && data.expiryDate.trim() !== "") {
+        batchData.expiryDate = new Date(data.expiryDate + "T00:00:00");
+      }
+
       console.log("📤 Sending batch data to API:", batchData);
+      console.log("📤 Product ID being sent:", batchData.productId);
 
       await addInventoryBatch(batchData);
 
@@ -269,6 +283,10 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                 rules={{
                   required: "Product selection is required",
                   validate: (value) => {
+                    console.log("Validating productId:", value);
+                    if (!value || value.trim() === "") {
+                      return "Please select a product";
+                    }
                     const product = products.find(
                       (p) => p._id === value || p.id === value
                     );
@@ -285,13 +303,20 @@ const AddInventoryDialog: React.FC<AddInventoryDialogProps> = ({
                       <select
                         {...field}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        onChange={(e) => {
+                          console.log("Product selected:", e.target.value);
+                          field.onChange(e.target.value);
+                        }}
                       >
                         <option value="">Select a product</option>
-                        {products.map((product) => (
-                          <option key={product._id} value={product._id}>
-                            {product.name} - {product.category}
-                          </option>
-                        ))}
+                        {products.map((product) => {
+                          const productValue = product._id || product.id;
+                          return (
+                            <option key={productValue} value={productValue}>
+                              {product.name} - {product.category}
+                            </option>
+                          );
+                        })}
                       </select>
                     </FormControl>
                     <FormMessage />

@@ -79,7 +79,11 @@ const Products = () => {
   };
 
   const handleAddInventory = (product: any) => {
-    setInventoryProduct({ id: product._id, name: product.name });
+    console.log("Opening inventory dialog for product:", product);
+    // Use _id as the primary identifier, fallback to id
+    const productId = product._id || product.id;
+    console.log("Product ID to pass:", productId);
+    setInventoryProduct({ id: productId, name: product.name });
   };
 
   return (
