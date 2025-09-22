@@ -13,8 +13,15 @@ export const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// Product validation rules
+// Product validation rules for creating NEW products
+// NOTE: ProductId is NOT required for new products - it gets auto-generated
 export const validateProduct = [
+  // Explicitly reject productId in creation requests
+  body("productId")
+    .not()
+    .exists()
+    .withMessage("ProductId should not be provided when creating new products - it will be auto-generated"),
+
   body("name")
     .trim()
     .notEmpty()
@@ -36,6 +43,26 @@ export const validateProduct = [
     .isLength({ min: 10, max: 500 })
     .withMessage("Description must be between 10 and 500 characters"),
 
+  body("buyPrice")
+    .isNumeric()
+    .withMessage("Buy price must be a number")
+    .isFloat({ min: 0.01 })
+    .withMessage("Buy price must be greater than 0"),
+
+  body("sellPrice")
+    .isNumeric()
+    .withMessage("Sell price must be a number")
+    .isFloat({ min: 0.01 })
+    .withMessage("Sell price must be greater than 0")
+    .custom((value, { req }) => {
+      const buyPrice = parseFloat(req.body.buyPrice);
+      const sellPrice = parseFloat(value);
+      if (sellPrice < buyPrice) {
+        throw new Error("Sell price must be greater than or equal to buy price");
+      }
+      return true;
+    }),
+
   body("barcode")
     .optional()
     .isLength({ min: 8, max: 50 })
@@ -44,6 +71,11 @@ export const validateProduct = [
     .withMessage(
       "Barcode can only contain alphanumeric characters, hyphens, and underscores"
     ),
+
+  body("quantity")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("Initial quantity must be a non-negative integer"),
 
   body("lowStockThreshold")
     .optional()
@@ -75,6 +107,20 @@ export const validateProductUpdate = [
     .isLength({ min: 10, max: 500 })
     .withMessage("Description must be between 10 and 500 characters"),
 
+  body("buyPrice")
+    .optional()
+    .isNumeric()
+    .withMessage("Buy price must be a number")
+    .isFloat({ min: 0.01 })
+    .withMessage("Buy price must be greater than 0"),
+
+  body("sellPrice")
+    .optional()
+    .isNumeric()
+    .withMessage("Sell price must be a number")
+    .isFloat({ min: 0.01 })
+    .withMessage("Sell price must be greater than 0"),
+
   body("barcode")
     .optional()
     .isLength({ min: 8, max: 50 })
@@ -83,6 +129,11 @@ export const validateProductUpdate = [
     .withMessage(
       "Barcode can only contain alphanumeric characters, hyphens, and underscores"
     ),
+
+  body("quantity")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("Quantity must be a non-negative integer"),
 
   body("lowStockThreshold")
     .optional()
@@ -255,6 +306,7 @@ export const validateDateRange = [
 ];
 
 // Inventory batch validation rules
+// NOTE: This is for adding inventory to EXISTING products, so productId IS required
 export const validateInventoryBatch = [
   body("productId")
     .notEmpty()
