@@ -69,13 +69,24 @@ const Reports = () => {
   const averageSaleValue = totalSales > 0 ? totalRevenue / totalSales : 0;
 
   const totalProfit = filteredSales.reduce((profit, sale) => {
+    // First, try to use the sale's calculated totalProfit (from backend FIFO calculation)
+    if (sale.totalProfit !== undefined && sale.totalProfit !== null) {
+      return profit + (Number(sale.totalProfit) || 0);
+    }
+
+    // Fallback to product-level profit calculation if sale-level profit is not available
     return (
       profit +
       sale.products.reduce((saleProfit, item) => {
+        // Check if the item has pre-calculated totalProfit from FIFO
+        if (item.totalProfit !== undefined && item.totalProfit !== null) {
+          return saleProfit + (Number(item.totalProfit) || 0);
+        }
+
+        // Last resort: calculate using current product data (less accurate)
         const product = products.find((p) => p.id === item.productId);
-        // Use actual FIFO batch costs instead of current product.buyPrice
         const actualProfit = calculateActualProfit(item, product);
-        return saleProfit + actualProfit;
+        return saleProfit + (Number(actualProfit) || 0);
       }, 0)
     );
   }, 0);
@@ -156,11 +167,16 @@ const Reports = () => {
         profit: 0,
       };
 
-      const saleProfit = sale.products.reduce((profit, item) => {
-        const product = products.find((p) => p.id === item.productId);
-        const actualProfit = calculateActualProfit(item, product);
-        return profit + actualProfit;
-      }, 0);
+      const saleProfit = sale.totalProfit !== undefined && sale.totalProfit !== null
+        ? Number(sale.totalProfit) || 0
+        : sale.products.reduce((profit, item) => {
+            if (item.totalProfit !== undefined && item.totalProfit !== null) {
+              return profit + (Number(item.totalProfit) || 0);
+            }
+            const product = products.find((p) => p.id === item.productId);
+            const actualProfit = calculateActualProfit(item, product);
+            return profit + (Number(actualProfit) || 0);
+          }, 0);
 
       dayMap.set(day, {
         day,
@@ -188,14 +204,20 @@ const Reports = () => {
           profit: 0,
         };
 
-        const product = products.find((p) => p.id === item.productId);
-        const profit = calculateActualProfit(item, product);
+        // Use pre-calculated profit if available, otherwise calculate
+        let profit;
+        if (item.totalProfit !== undefined && item.totalProfit !== null) {
+          profit = Number(item.totalProfit) || 0;
+        } else {
+          const product = products.find((p) => p.id === item.productId);
+          profit = calculateActualProfit(item, product);
+        }
 
         productMap.set(item.productId, {
           productName: item.productName,
           quantity: existing.quantity + item.quantity,
-          revenue: existing.revenue + item.total,
-          profit: existing.profit + profit,
+          revenue: existing.revenue + (Number(item.total) || 0),
+          profit: existing.profit + (Number(profit) || 0),
         });
       });
     });
@@ -207,6 +229,17 @@ const Reports = () => {
 
   // Sales by category
   const salesByCategory = () => {
+    // Use dashboard API data if available, which includes proper aggregated category data
+    if (dashboardData?.categoryDistribution) {
+      return dashboardData.categoryDistribution.map(cat => ({
+        category: cat._id,
+        revenue: cat.totalRevenue || 0,
+        quantity: cat.totalQuantity || 0,
+        sales: cat.totalSales || 0,
+      }));
+    }
+
+    // Fallback to manual calculation if dashboard data not available
     const categoryMap = new Map();
 
     filteredSales.forEach((sale) => {
@@ -220,13 +253,19 @@ const Reports = () => {
             profit: 0,
           };
 
-          const profit = calculateActualProfit(item, product);
+          // Use pre-calculated profit if available, otherwise calculate
+          let profit;
+          if (item.totalProfit !== undefined && item.totalProfit !== null) {
+            profit = Number(item.totalProfit) || 0;
+          } else {
+            profit = calculateActualProfit(item, product);
+          }
 
           categoryMap.set(product.category, {
             category: product.category,
-            revenue: existing.revenue + item.total,
+            revenue: existing.revenue + (Number(item.total) || 0),
             quantity: existing.quantity + item.quantity,
-            profit: existing.profit + profit,
+            profit: existing.profit + (Number(profit) || 0),
           });
         }
       });

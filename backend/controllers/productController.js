@@ -93,12 +93,37 @@ export const getAllProducts = catchAsync(async (req, res, next) => {
       { $limit: limitNum },
     ]);
 
+    // Update quantities and prices from batches for accurate stock levels and FIFO pricing
+    const productsWithAccurateStock = await Promise.all(
+      products.map(async (product) => {
+        const totalAvailable = await InventoryBatch.getTotalAvailableQuantity(product._id);
+
+        // Get oldest batch for FIFO pricing
+        const oldestBatch = await InventoryBatch.findOne({
+          productId: product._id,
+          status: "active",
+          remainingQuantity: { $gt: 0 }
+        }).sort({ purchaseDate: 1 });
+
+        return {
+          ...product,
+          quantity: totalAvailable,
+          totalQuantity: totalAvailable,
+          // Use FIFO prices (oldest batch) instead of averages
+          buyPrice: oldestBatch ? oldestBatch.buyPrice : product.buyPrice,
+          sellPrice: oldestBatch ? oldestBatch.sellPrice : product.sellPrice,
+          currentBuyPrice: oldestBatch ? oldestBatch.buyPrice : product.currentBuyPrice,
+          currentSellPrice: oldestBatch ? oldestBatch.sellPrice : product.currentSellPrice,
+        };
+      })
+    );
+
     const total = await Product.countDocuments(filter);
     const totalPages = Math.ceil(total / limitNum);
 
     return res.status(200).json({
       status: "success",
-      results: products.length,
+      results: productsWithAccurateStock.length,
       pagination: {
         currentPage: parseInt(page),
         totalPages,
@@ -108,7 +133,7 @@ export const getAllProducts = catchAsync(async (req, res, next) => {
         hasPrevPage: page > 1,
       },
       data: {
-        products,
+        products: productsWithAccurateStock,
       },
     });
   } else {
@@ -117,13 +142,38 @@ export const getAllProducts = catchAsync(async (req, res, next) => {
 
   const products = await query.skip(skip).limit(limitNum).lean();
 
+  // Update quantities and prices from batches for accurate stock levels and FIFO pricing
+  const productsWithAccurateStock = await Promise.all(
+    products.map(async (product) => {
+      const totalAvailable = await InventoryBatch.getTotalAvailableQuantity(product._id);
+
+      // Get oldest batch for FIFO pricing
+      const oldestBatch = await InventoryBatch.findOne({
+        productId: product._id,
+        status: "active",
+        remainingQuantity: { $gt: 0 }
+      }).sort({ purchaseDate: 1 });
+
+      return {
+        ...product,
+        quantity: totalAvailable,
+        totalQuantity: totalAvailable,
+        // Use FIFO prices (oldest batch) instead of averages
+        buyPrice: oldestBatch ? oldestBatch.buyPrice : product.buyPrice,
+        sellPrice: oldestBatch ? oldestBatch.sellPrice : product.sellPrice,
+        currentBuyPrice: oldestBatch ? oldestBatch.buyPrice : product.currentBuyPrice,
+        currentSellPrice: oldestBatch ? oldestBatch.sellPrice : product.currentSellPrice,
+      };
+    })
+  );
+
   // Get total count for pagination
   const total = await Product.countDocuments(filter);
   const totalPages = Math.ceil(total / limitNum);
 
   res.status(200).json({
     status: "success",
-    results: products.length,
+    results: productsWithAccurateStock.length,
     pagination: {
       currentPage: parseInt(page),
       totalPages,
@@ -133,7 +183,7 @@ export const getAllProducts = catchAsync(async (req, res, next) => {
       hasPrevPage: page > 1,
     },
     data: {
-      products,
+      products: productsWithAccurateStock,
     },
   });
 });
@@ -151,10 +201,31 @@ export const getProduct = catchAsync(async (req, res, next) => {
     return next(new AppError("Product not found", 404));
   }
 
+  // Update quantity and prices from batches for accurate stock levels and FIFO pricing
+  const totalAvailable = await InventoryBatch.getTotalAvailableQuantity(product._id);
+
+  // Get oldest batch for FIFO pricing
+  const oldestBatch = await InventoryBatch.findOne({
+    productId: product._id,
+    status: "active",
+    remainingQuantity: { $gt: 0 }
+  }).sort({ purchaseDate: 1 });
+
+  const productWithAccurateStock = {
+    ...product.toObject(),
+    quantity: totalAvailable,
+    totalQuantity: totalAvailable,
+    // Use FIFO prices (oldest batch) instead of averages
+    buyPrice: oldestBatch ? oldestBatch.buyPrice : product.buyPrice,
+    sellPrice: oldestBatch ? oldestBatch.sellPrice : product.sellPrice,
+    currentBuyPrice: oldestBatch ? oldestBatch.buyPrice : product.currentBuyPrice,
+    currentSellPrice: oldestBatch ? oldestBatch.sellPrice : product.currentSellPrice,
+  };
+
   res.status(200).json({
     status: "success",
     data: {
-      product,
+      product: productWithAccurateStock,
     },
   });
 });
@@ -176,10 +247,31 @@ export const getProductByBarcode = catchAsync(async (req, res, next) => {
     return next(new AppError("Product not found", 404));
   }
 
+  // Update quantity and prices from batches for accurate stock levels and FIFO pricing
+  const totalAvailable = await InventoryBatch.getTotalAvailableQuantity(product._id);
+
+  // Get oldest batch for FIFO pricing
+  const oldestBatch = await InventoryBatch.findOne({
+    productId: product._id,
+    status: "active",
+    remainingQuantity: { $gt: 0 }
+  }).sort({ purchaseDate: 1 });
+
+  const productWithAccurateStock = {
+    ...product.toObject(),
+    quantity: totalAvailable,
+    totalQuantity: totalAvailable,
+    // Use FIFO prices (oldest batch) instead of averages
+    buyPrice: oldestBatch ? oldestBatch.buyPrice : product.buyPrice,
+    sellPrice: oldestBatch ? oldestBatch.sellPrice : product.sellPrice,
+    currentBuyPrice: oldestBatch ? oldestBatch.buyPrice : product.currentBuyPrice,
+    currentSellPrice: oldestBatch ? oldestBatch.sellPrice : product.currentSellPrice,
+  };
+
   res.status(200).json({
     status: "success",
     data: {
-      product,
+      product: productWithAccurateStock,
     },
   });
 });
@@ -765,11 +857,36 @@ export const searchProducts = catchAsync(async (req, res, next) => {
     .limit(50)
     .lean();
 
+  // Update quantities and prices from batches for accurate stock levels and FIFO pricing
+  const productsWithAccurateStock = await Promise.all(
+    products.map(async (product) => {
+      const totalAvailable = await InventoryBatch.getTotalAvailableQuantity(product._id);
+
+      // Get oldest batch for FIFO pricing
+      const oldestBatch = await InventoryBatch.findOne({
+        productId: product._id,
+        status: "active",
+        remainingQuantity: { $gt: 0 }
+      }).sort({ purchaseDate: 1 });
+
+      return {
+        ...product,
+        quantity: totalAvailable,
+        totalQuantity: totalAvailable,
+        // Use FIFO prices (oldest batch) instead of averages
+        buyPrice: oldestBatch ? oldestBatch.buyPrice : product.buyPrice,
+        sellPrice: oldestBatch ? oldestBatch.sellPrice : product.sellPrice,
+        currentBuyPrice: oldestBatch ? oldestBatch.buyPrice : product.currentBuyPrice,
+        currentSellPrice: oldestBatch ? oldestBatch.sellPrice : product.currentSellPrice,
+      };
+    })
+  );
+
   res.status(200).json({
     status: "success",
-    results: products.length,
+    results: productsWithAccurateStock.length,
     data: {
-      products,
+      products: productsWithAccurateStock,
     },
   });
 });

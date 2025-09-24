@@ -78,17 +78,13 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({
   const onSubmit = async (data: ProductFormData) => {
     console.log("📝 Form submission data:", data);
     console.log("🔍 Original product:", product);
+    console.log("🔍 Price validation:");
+    console.log("  - Buy Price:", data.buyPrice, typeof data.buyPrice);
+    console.log("  - Sell Price:", data.sellPrice, typeof data.sellPrice);
+    console.log("  - sellPrice >= buyPrice?", data.sellPrice >= data.buyPrice);
 
     try {
-      // Validate prices
-      if (data.sellPrice < data.buyPrice) {
-        toast({
-          title: "Validation Error",
-          description: "Sell price must be greater than or equal to buy price",
-          variant: "destructive",
-        });
-        return;
-      }
+      // Price validation removed as requested
 
       // Prepare update data - only include changed fields
       const updateData: Partial<Product> = {};
@@ -335,21 +331,8 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({
                     value: 0.01,
                     message: "Sell price must be greater than 0",
                   },
-                  validate: (value) => {
-                    const sellPrice = parseFloat(value.toString());
-                    const buyPrice = parseFloat(
-                      form.getValues("buyPrice").toString()
-                    );
-
-                    if (isNaN(sellPrice))
-                      return "Sell price must be a valid number";
-                    if (sellPrice <= 0)
-                      return "Sell price must be greater than 0";
-                    if (sellPrice < buyPrice)
-                      return "Sell price must be greater than or equal to buy price";
-
-                    return true;
-                  },
+                  // Remove real-time validation to avoid timing issues
+                  // Price relationship validation will be done on form submit
                 }}
                 render={({ field }) => (
                   <FormItem>

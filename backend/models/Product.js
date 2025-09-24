@@ -41,12 +41,6 @@ const productSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Sell price is required"],
       min: [0.01, "Sell price must be greater than 0"],
-      validate: {
-        validator: function (value) {
-          return value >= this.buyPrice;
-        },
-        message: "Sell price must be greater than or equal to buy price",
-      },
     },
     quantity: {
       type: Number,
@@ -186,7 +180,7 @@ productSchema.statics.updateQuantityFromBatches = async function (productId) {
   const aggregation = await InventoryBatch.aggregate([
     {
       $match: {
-        productId: mongoose.Types.ObjectId(productId),
+        productId: new mongoose.Types.ObjectId(productId),
         status: "active",
         remainingQuantity: { $gt: 0 },
       },

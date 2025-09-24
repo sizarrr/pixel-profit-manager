@@ -272,6 +272,12 @@ export const createSale = catchAsync(async (req, res, next) => {
     await sale.save({ session });
     await session.commitTransaction();
 
+    // Update product quantities after batch allocations
+    const uniqueProductIds = [...new Set(products.map(p => p.productId))];
+    for (const productId of uniqueProductIds) {
+      await Product.updateQuantityFromBatches(productId);
+    }
+
     // Populate batch details for response
     const populatedSale = await Sale.findById(sale._id).populate(
       "products.batchAllocations.batchId",
@@ -683,6 +689,12 @@ export const processSaleRefund = catchAsync(async (req, res, next) => {
     await sale.save({ session });
 
     await session.commitTransaction();
+
+    // Update product quantities after refund batch updates
+    const uniqueProductIds = [...new Set(refundItems.map(item => item.productId))];
+    for (const productId of uniqueProductIds) {
+      await Product.updateQuantityFromBatches(productId);
+    }
 
     res.status(200).json({
       status: "success",

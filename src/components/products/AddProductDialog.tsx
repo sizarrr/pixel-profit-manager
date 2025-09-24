@@ -80,9 +80,8 @@ const AddProductDialog: React.FC<AddProductDialogProps> = ({
         return;
       }
 
-      // Create product with all data
+      // Create product with all data (no _id needed - auto-generated)
       await addProduct({
-        _id: "", // Provide a default or generated value if needed
         name: data.name.trim(),
         category: data.category.trim(),
         buyPrice: Number(data.buyPrice),

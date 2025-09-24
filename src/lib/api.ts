@@ -800,7 +800,7 @@ export const apiService = {
           lowStockProducts: data.products?.lowStockCount || 0,
           recentSales: Array.isArray(data.recentSales) ? data.recentSales : [],
           topProducts: Array.isArray(data.topProducts) ? data.topProducts : [],
-          salesByCategory: Array.isArray(data.categoryDistribution)
+          categoryDistribution: Array.isArray(data.categoryDistribution)
             ? data.categoryDistribution
             : [],
           monthlySales: Array.isArray(data.monthlySalesData)
@@ -824,7 +824,7 @@ export const apiService = {
           lowStockProducts: 0,
           recentSales: [],
           topProducts: [],
-          salesByCategory: [],
+          categoryDistribution: [],
           monthlySales: [],
         },
       };
@@ -841,7 +841,7 @@ export const apiService = {
           lowStockProducts: 0,
           recentSales: [],
           topProducts: [],
-          salesByCategory: [],
+          categoryDistribution: [],
           monthlySales: [],
         },
       };

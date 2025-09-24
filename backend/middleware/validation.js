@@ -53,15 +53,7 @@ export const validateProduct = [
     .isNumeric()
     .withMessage("Sell price must be a number")
     .isFloat({ min: 0.01 })
-    .withMessage("Sell price must be greater than 0")
-    .custom((value, { req }) => {
-      const buyPrice = parseFloat(req.body.buyPrice);
-      const sellPrice = parseFloat(value);
-      if (sellPrice < buyPrice) {
-        throw new Error("Sell price must be greater than or equal to buy price");
-      }
-      return true;
-    }),
+    .withMessage("Sell price must be greater than 0"),
 
   body("barcode")
     .optional()

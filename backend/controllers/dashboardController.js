@@ -189,27 +189,70 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
         return [];
       }),
 
-      // Category distribution - FIXED
-      Product.aggregate([
-        { $match: { isActive: { $ne: false } } },
+      // Sales by Category - Based on actual sales, not just products
+      Sale.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: start, $lte: end },
+            status: { $ne: "cancelled" }
+          }
+        },
+        { $unwind: "$products" },
+        {
+          $lookup: {
+            from: "products",
+            let: {
+              productId: {
+                $cond: [
+                  { $eq: [{ $type: "$products.productId" }, "objectId"] },
+                  "$products.productId",
+                  { $toObjectId: "$products.productId" }
+                ]
+              }
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ["$_id", "$$productId"] }
+                }
+              },
+              {
+                $project: {
+                  category: 1
+                }
+              }
+            ],
+            as: "productInfo"
+          }
+        },
+        {
+          $addFields: {
+            productCategory: {
+              $ifNull: [
+                { $arrayElemAt: ["$productInfo.category", 0] },
+                "Uncategorized"
+              ]
+            }
+          }
+        },
         {
           $group: {
-            _id: { $ifNull: ["$category", "Uncategorized"] },
-            count: { $sum: 1 },
-            totalValue: {
+            _id: "$productCategory",
+            totalSales: { $sum: 1 },
+            totalRevenue: {
               $sum: {
                 $multiply: [
-                  { $ifNull: ["$sellPrice", 0] },
-                  { $ifNull: ["$quantity", 0] },
-                ],
-              },
+                  { $ifNull: ["$products.sellPrice", 0] },
+                  { $ifNull: ["$products.quantity", 0] }
+                ]
+              }
             },
-            totalQuantity: { $sum: { $ifNull: ["$quantity", 0] } },
-          },
+            totalQuantity: { $sum: { $ifNull: ["$products.quantity", 0] } }
+          }
         },
-        { $sort: { count: -1 } },
+        { $sort: { totalRevenue: -1 } }
       ]).catch((err) => {
-        console.error("❌ Category distribution error:", err);
+        console.error("❌ Sales by category error:", err);
         return [];
       }),
 
@@ -345,8 +388,28 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
             productData: { $arrayElemAt: ["$productInfo", 0] },
             sellAmount: {
               $multiply: [
-                { $toDouble: { $ifNull: ["$products.sellPrice", 0] } },
-                { $toDouble: { $ifNull: ["$products.quantity", 0] } },
+                {
+                  $cond: [
+                    { $and: [
+                      { $ne: ["$products.sellPrice", null] },
+                      { $ne: ["$products.sellPrice", ""] },
+                      { $type: ["$products.sellPrice", "number"] }
+                    ]},
+                    { $toDouble: "$products.sellPrice" },
+                    0
+                  ]
+                },
+                {
+                  $cond: [
+                    { $and: [
+                      { $ne: ["$products.quantity", null] },
+                      { $ne: ["$products.quantity", ""] },
+                      { $type: ["$products.quantity", "number"] }
+                    ]},
+                    { $toDouble: "$products.quantity" },
+                    0
+                  ]
+                },
               ],
             },
           },
@@ -356,15 +419,33 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
             // Use currentBuyPrice if available (FIFO), otherwise use buyPrice
             unitCost: {
               $cond: [
-                { $ne: ["$productData.currentBuyPrice", null] },
+                { $and: [
+                  { $ne: ["$productData.currentBuyPrice", null] },
+                  { $ne: ["$productData.currentBuyPrice", ""] },
+                  { $type: ["$productData.currentBuyPrice", "number"] }
+                ]},
                 { $toDouble: "$productData.currentBuyPrice" },
                 {
                   $cond: [
-                    { $ne: ["$productData.buyPrice", null] },
+                    { $and: [
+                      { $ne: ["$productData.buyPrice", null] },
+                      { $ne: ["$productData.buyPrice", ""] },
+                      { $type: ["$productData.buyPrice", "number"] }
+                    ]},
                     { $toDouble: "$productData.buyPrice" },
                     {
                       $multiply: [
-                        { $toDouble: { $ifNull: ["$products.sellPrice", 0] } },
+                        {
+                          $cond: [
+                            { $and: [
+                              { $ne: ["$products.sellPrice", null] },
+                              { $ne: ["$products.sellPrice", ""] },
+                              { $type: ["$products.sellPrice", "number"] }
+                            ]},
+                            { $toDouble: "$products.sellPrice" },
+                            0
+                          ]
+                        },
                         0.7,
                       ],
                     }, // 30% margin estimate
@@ -378,19 +459,42 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
           $addFields: {
             costAmount: {
               $multiply: [
-                "$unitCost",
-                { $toDouble: { $ifNull: ["$products.quantity", 0] } },
+                {
+                  $cond: [
+                    { $and: [
+                      { $ne: ["$unitCost", null] },
+                      { $type: ["$unitCost", "number"] }
+                    ]},
+                    "$unitCost",
+                    0
+                  ]
+                },
+                {
+                  $cond: [
+                    { $and: [
+                      { $ne: ["$products.quantity", null] },
+                      { $ne: ["$products.quantity", ""] },
+                      { $type: ["$products.quantity", "number"] }
+                    ]},
+                    { $toDouble: "$products.quantity" },
+                    0
+                  ]
+                },
               ],
             },
             estimatedProfit: {
               $subtract: [
-                "$sellAmount",
                 {
-                  $multiply: [
-                    "$unitCost",
-                    { $toDouble: { $ifNull: ["$products.quantity", 0] } },
-                  ],
+                  $cond: [
+                    { $and: [
+                      { $ne: ["$sellAmount", null] },
+                      { $type: ["$sellAmount", "number"] }
+                    ]},
+                    "$sellAmount",
+                    0
+                  ]
                 },
+                "$costAmount",
               ],
             },
           },
@@ -404,7 +508,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   {
                     $and: [
                       { $ne: ["$estimatedProfit", null] },
-                      { $not: { $isNaN: "$estimatedProfit" } },
+                      { $type: ["$estimatedProfit", "number"] },
                     ],
                   },
                   "$estimatedProfit",
@@ -418,7 +522,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   {
                     $and: [
                       { $ne: ["$sellAmount", null] },
-                      { $not: { $isNaN: "$sellAmount" } },
+                      { $type: ["$sellAmount", "number"] },
                     ],
                   },
                   "$sellAmount",

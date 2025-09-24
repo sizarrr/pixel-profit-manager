@@ -177,7 +177,7 @@ inventoryBatchSchema.statics.getTotalAvailableQuantity = async function (
   const result = await this.aggregate([
     {
       $match: {
-        productId: mongoose.Types.ObjectId(productId),
+        productId: new mongoose.Types.ObjectId(productId),
         status: "active",
         remainingQuantity: { $gt: 0 },
       },

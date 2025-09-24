@@ -39,9 +39,14 @@ const Products = () => {
   } | null>(null);
 
   const lowStockProducts = getLowStockProducts();
-  const categories = Array.from(new Set(products.map((p) => p.category)));
+  const categories = Array.from(new Set(products.filter(p => p && p.category).map((p) => p.category)));
 
   const filteredProducts = products.filter((product) => {
+    // Safety checks for undefined values
+    if (!product || !product.name || !product.category) {
+      return false;
+    }
+
     const matchesSearch =
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -282,7 +287,11 @@ const Products = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setEditingProduct(product)}
+                      onClick={() => {
+                        if (product && product.name && product.category) {
+                          setEditingProduct(product);
+                        }
+                      }}
                       className="p-1 h-8 w-8"
                     >
                       <Edit className="w-4 h-4" />
