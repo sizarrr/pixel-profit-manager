@@ -165,7 +165,6 @@ saleSchema.pre("save", async function (next) {
 });
 
 // Indexes
-saleSchema.index({ receiptNumber: 1 });
 saleSchema.index({ createdAt: -1 });
 saleSchema.index({ cashierName: 1 });
 saleSchema.index({ status: 1 });

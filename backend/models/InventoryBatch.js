@@ -116,7 +116,6 @@ inventoryBatchSchema.virtual("ageInDays").get(function () {
 // Indexes for performance
 inventoryBatchSchema.index({ productId: 1, purchaseDate: 1 });
 inventoryBatchSchema.index({ productId: 1, status: 1, remainingQuantity: 1 });
-inventoryBatchSchema.index({ batchNumber: 1 });
 inventoryBatchSchema.index({ status: 1 });
 
 // Generate batch number before saving - IMPROVED VERSION

@@ -113,7 +113,6 @@ productSchema.virtual("batches", {
 // Indexes
 productSchema.index({ name: "text", description: "text" });
 productSchema.index({ category: 1 });
-productSchema.index({ barcode: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ totalQuantity: 1 });
 
