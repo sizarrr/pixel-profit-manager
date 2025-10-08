@@ -80,7 +80,7 @@ export const getSale = catchAsync(async (req, res, next) => {
   });
 });
 
-// Create new sale with FIFO allocation
+// Create new sale with optimized FIFO allocation
 export const createSale = catchAsync(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -106,41 +106,73 @@ export const createSale = catchAsync(async (req, res, next) => {
       throw new AppError("Cashier name is required", 400);
     }
 
+    // Extract unique product IDs for batch queries
+    const productIds = [...new Set(products.map(p => p.productId))];
+
+    // Validate product IDs
+    for (const item of products) {
+      if (!item.productId) {
+        throw new AppError("Product ID is required", 400);
+      }
+      if (!item.quantity || item.quantity <= 0) {
+        throw new AppError("Valid quantity is required", 400);
+      }
+    }
+
+    // Fetch all products in a single query
+    const productDocs = await Product.find({
+      _id: { $in: productIds },
+      isActive: true
+    }).session(session);
+
+    // Create product lookup map
+    const productMap = new Map();
+    productDocs.forEach(product => {
+      productMap.set(product._id.toString(), product);
+    });
+
+    // Validate all products exist and are active
+    for (const item of products) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new AppError(`Product not found or inactive: ${item.productId}`, 404);
+      }
+    }
+
+    // Fetch all batches for all products in a single query with aggregation
+    const batchData = await InventoryBatch.aggregate([
+      {
+        $match: {
+          productId: { $in: productIds.map(id => new mongoose.Types.ObjectId(id)) },
+          status: "active",
+          remainingQuantity: { $gt: 0 }
+        }
+      },
+      {
+        $sort: { productId: 1, purchaseDate: 1, createdAt: 1 } // Group by product, then FIFO
+      }
+    ]).session(session);
+
+    // Group batches by product ID
+    const batchesByProduct = new Map();
+    batchData.forEach(batch => {
+      const productId = batch.productId.toString();
+      if (!batchesByProduct.has(productId)) {
+        batchesByProduct.set(productId, []);
+      }
+      batchesByProduct.get(productId).push(batch);
+    });
+
     let subtotal = 0;
     let totalCost = 0;
     let totalProfit = 0;
     const processedProducts = [];
+    const batchUpdates = []; // Collect batch updates for bulk operation
 
-    // Process each product with FIFO allocation
+    // Process all products
     for (const item of products) {
-      // Validate product data
-      if (!item.productId) {
-        throw new AppError("Product ID is required", 400);
-      }
-
-      if (!item.quantity || item.quantity <= 0) {
-        throw new AppError("Valid quantity is required", 400);
-      }
-
-      // Get product details
-      const product = await Product.findById(item.productId).session(session);
-
-      if (!product) {
-        throw new AppError(`Product not found: ${item.productId}`, 404);
-      }
-
-      if (!product.isActive) {
-        throw new AppError(`Product is not active: ${product.name}`, 400);
-      }
-
-      // Get available batches in FIFO order (oldest first)
-      const availableBatches = await InventoryBatch.find({
-        productId: item.productId,
-        status: "active",
-        remainingQuantity: { $gt: 0 },
-      })
-        .sort({ purchaseDate: 1, createdAt: 1 }) // FIFO: oldest first
-        .session(session);
+      const product = productMap.get(item.productId);
+      const availableBatches = batchesByProduct.get(item.productId) || [];
 
       // Calculate total available quantity
       const totalAvailable = availableBatches.reduce(
@@ -185,15 +217,19 @@ export const createSale = catchAsync(async (req, res, next) => {
           profit: allocationProfit,
         });
 
-        // Update batch remaining quantity
+        // Update batch remaining quantity in memory
         batch.remainingQuantity -= allocateFromBatch;
 
-        // Update batch status if depleted
-        if (batch.remainingQuantity === 0) {
-          batch.status = "depleted";
-        }
-
-        await batch.save({ session });
+        // Prepare batch update for bulk operation
+        batchUpdates.push({
+          updateOne: {
+            filter: { _id: batch._id },
+            update: {
+              remainingQuantity: batch.remainingQuantity,
+              status: batch.remainingQuantity === 0 ? "depleted" : "active"
+            }
+          }
+        });
 
         // Add to totals
         itemCost += allocationCost;
@@ -225,9 +261,11 @@ export const createSale = catchAsync(async (req, res, next) => {
       subtotal += itemPrice;
       totalCost += itemCost;
       totalProfit += itemProfit;
+    }
 
-      // Update product total quantity from remaining batches
-      await product.updateFromBatches();
+    // Perform bulk batch updates in a single operation
+    if (batchUpdates.length > 0) {
+      await InventoryBatch.bulkWrite(batchUpdates, { session });
     }
 
     // Calculate final amounts with tax and discount
@@ -235,20 +273,13 @@ export const createSale = catchAsync(async (req, res, next) => {
     const totalAmount = subtotal - discountAmount + taxAmount;
     const finalProfit = totalProfit - discountAmount;
 
-    // Generate receipt number
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const salesCount = await Sale.countDocuments({
-      createdAt: {
-        $gte: new Date(date.setHours(0, 0, 0, 0)),
-        $lt: new Date(date.setHours(23, 59, 59, 999)),
-      },
-    });
-    const receiptNumber = `RCP-${year}${month}${day}-${String(
-      salesCount + 1
-    ).padStart(4, "0")}`;
+    // Generate receipt number using timestamp for uniqueness (faster than counting)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const timestamp = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+    const receiptNumber = `RCP-${year}${month}${day}-${timestamp}`;
 
     // Create sale record
     const sale = new Sale({
@@ -272,22 +303,34 @@ export const createSale = catchAsync(async (req, res, next) => {
     await sale.save({ session });
     await session.commitTransaction();
 
-    // Update product quantities after batch allocations
-    const uniqueProductIds = [...new Set(products.map(p => p.productId))];
-    for (const productId of uniqueProductIds) {
+    // Update product quantities after batch allocations (outside transaction for speed)
+    for (const productId of productIds) {
       await Product.updateQuantityFromBatches(productId);
     }
-
-    // Populate batch details for response
-    const populatedSale = await Sale.findById(sale._id).populate(
-      "products.batchAllocations.batchId",
-      "batchNumber purchaseDate"
-    );
 
     res.status(201).json({
       status: "success",
       data: {
-        sale: populatedSale,
+        sale: {
+          _id: sale._id,
+          receiptNumber: sale.receiptNumber,
+          products: processedProducts,
+          subtotal: sale.subtotal,
+          taxRate: sale.taxRate,
+          taxAmount: sale.taxAmount,
+          discountAmount: sale.discountAmount,
+          totalAmount: sale.totalAmount,
+          totalCost: sale.totalCost,
+          totalProfit: sale.totalProfit,
+          cashierName: sale.cashierName,
+          customerName: sale.customerName,
+          customerPhone: sale.customerPhone,
+          paymentMethod: sale.paymentMethod,
+          notes: sale.notes,
+          status: sale.status,
+          createdAt: sale.createdAt,
+          updatedAt: sale.updatedAt
+        },
         summary: {
           itemsSold: processedProducts.reduce((sum, p) => sum + p.quantity, 0),
           totalRevenue: totalAmount,

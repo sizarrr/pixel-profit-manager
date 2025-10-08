@@ -39,7 +39,9 @@ const Products = () => {
   } | null>(null);
 
   const lowStockProducts = getLowStockProducts();
-  const categories = Array.from(new Set(products.filter(p => p && p.category).map((p) => p.category)));
+  const categories = Array.from(
+    new Set(products.filter((p) => p && p.category).map((p) => p.category))
+  );
 
   const filteredProducts = products.filter((product) => {
     // Safety checks for undefined values
@@ -121,30 +123,6 @@ const Products = () => {
           </Button>
         </div>
       </div>
-
-      {/* FIFO System Info */}
-      <Card className="border-blue-200 bg-blue-50">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <Layers className="w-5 h-5 text-blue-600 mt-0.5" />
-            <div>
-              <h4 className="font-semibold text-blue-900 mb-1">
-                FIFO Inventory System
-              </h4>
-              <p className="text-sm text-blue-700 mb-2">
-                Your store uses First-In-First-Out inventory management for
-                accurate cost tracking and profit calculations.
-              </p>
-              <div className="flex flex-wrap gap-2 text-xs text-blue-600">
-                <span>• Automatic batch tracking</span>
-                <span>• Accurate profit margins</span>
-                <span>• Expiration management</span>
-                <span>• Cost per sale precision</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Low Stock Alert */}
       {lowStockProducts.length > 0 && (

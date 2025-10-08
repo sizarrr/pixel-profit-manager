@@ -111,7 +111,7 @@ const saleSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["cash", "card", "digital", "check"],
+      enum: ["cash", "card", "digital", "check", "loan"],
       default: "cash",
     },
     cashierName: {

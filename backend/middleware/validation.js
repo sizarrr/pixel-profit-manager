@@ -185,8 +185,8 @@ export const validateSale = [
 
   body("paymentMethod")
     .optional()
-    .isIn(["cash", "card", "digital"])
-    .withMessage("Payment method must be cash, card, or digital"),
+    .isIn(["cash", "card", "digital", "loan"])
+    .withMessage("Payment method must be cash, card, digital, or loan"),
 
   body("customerName")
     .optional()

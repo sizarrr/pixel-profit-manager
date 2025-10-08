@@ -10,7 +10,8 @@ import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Sales from "@/pages/Sales";
-import Reports from "@/pages/Reports"; // Import the Reports component
+import Reports from "@/pages/Reports";
+import Loans from "@/pages/Loans";
 import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "next-themes";
 
@@ -29,7 +30,7 @@ const AppLayout = () => {
               <Route path="/products" element={<Products />} />
               <Route path="/sales" element={<Sales />} />
               <Route path="/reports" element={<Reports />} />
-              {/* Add Reports route */}
+              <Route path="/loans" element={<Loans />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </div>

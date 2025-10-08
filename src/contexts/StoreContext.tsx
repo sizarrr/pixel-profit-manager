@@ -84,8 +84,8 @@ export interface Sale {
     productId: string;
     productName: string;
     quantity: number;
-    sellPrice: number;
-    total: number;
+    sellPrice?: number;
+    total?: number;
     // FIFO batch allocations
     batchAllocations?: {
       batchId: string;
@@ -95,10 +95,10 @@ export interface Sale {
       sellPrice: number;
       profit: number;
     }[];
-    // Aggregated FIFO values
-    totalCost?: number;
-    totalPrice?: number;
-    totalProfit?: number;
+    // Aggregated FIFO values (correct field names from backend)
+    totalCost: number;
+    totalPrice: number;
+    totalProfit: number;
   }[];
   totalAmount: number;
   cashierName: string;

@@ -15,6 +15,7 @@ import productRoutes from "./routes/productRoutes.js";
 import saleRoutes from "./routes/saleRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import loanRoutes from "./routes/loanRoutes.js";
 
 const app = express();
 
@@ -139,6 +140,7 @@ app.use(`${config.apiPrefix}/products`, productRoutes);
 app.use(`${config.apiPrefix}/sales`, saleRoutes);
 app.use(`${config.apiPrefix}/inventory`, inventoryRoutes);
 app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
+app.use(`${config.apiPrefix}/loans`, loanRoutes);
 
 // API documentation endpoint
 app.get(`${config.apiPrefix}`, (req, res) => {
@@ -318,3 +320,5 @@ export default app;
 
 
 
+
+ 

@@ -3,12 +3,13 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
-import { 
-  LayoutDashboard, 
-  Package, 
-  ShoppingCart, 
-  BarChart3, 
-  Monitor
+import {
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  BarChart3,
+  Monitor,
+  CreditCard
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -18,6 +19,7 @@ const Sidebar = () => {
     { name: t('dashboard'), href: '/', icon: LayoutDashboard, current: true },
     { name: t('products'), href: '/products', icon: Package, current: false },
     { name: t('sales'), href: '/sales', icon: ShoppingCart, current: false },
+    { name: 'Credit & Loans', href: '/loans', icon: CreditCard, current: false },
     { name: t('reports'), href: '/reports', icon: BarChart3, current: false },
   ];
 

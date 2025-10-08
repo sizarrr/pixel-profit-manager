@@ -27,6 +27,7 @@ import {
   Line,
   Area,
   AreaChart,
+  Legend,
 } from "recharts";
 import {
   FileText,
@@ -41,8 +42,10 @@ import {
   RefreshCw,
   Eye,
   BarChart3,
+  AlertCircle,
 } from "lucide-react";
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const Reports = () => {
   const { products, sales, dashboardData, refreshData } = useStore();
@@ -167,16 +170,17 @@ const Reports = () => {
         profit: 0,
       };
 
-      const saleProfit = sale.totalProfit !== undefined && sale.totalProfit !== null
-        ? Number(sale.totalProfit) || 0
-        : sale.products.reduce((profit, item) => {
-            if (item.totalProfit !== undefined && item.totalProfit !== null) {
-              return profit + (Number(item.totalProfit) || 0);
-            }
-            const product = products.find((p) => p.id === item.productId);
-            const actualProfit = calculateActualProfit(item, product);
-            return profit + (Number(actualProfit) || 0);
-          }, 0);
+      const saleProfit =
+        sale.totalProfit !== undefined && sale.totalProfit !== null
+          ? Number(sale.totalProfit) || 0
+          : sale.products.reduce((profit, item) => {
+              if (item.totalProfit !== undefined && item.totalProfit !== null) {
+                return profit + (Number(item.totalProfit) || 0);
+              }
+              const product = products.find((p) => p.id === item.productId);
+              const actualProfit = calculateActualProfit(item, product);
+              return profit + (Number(actualProfit) || 0);
+            }, 0);
 
       dayMap.set(day, {
         day,
@@ -213,10 +217,35 @@ const Reports = () => {
           profit = calculateActualProfit(item, product);
         }
 
+        // Calculate revenue from the sale transaction - use correct field name
+        let itemRevenue = 0;
+        if (item.totalPrice && Number(item.totalPrice) > 0) {
+          // Use totalPrice from the FIFO system (correct field)
+          itemRevenue = Number(item.totalPrice);
+        } else if (item.total && Number(item.total) > 0) {
+          // Fallback to total if available
+          itemRevenue = Number(item.total);
+        } else if (item.sellPrice && item.quantity) {
+          // Last resort: calculate from sellPrice * quantity
+          itemRevenue = Number(item.sellPrice) * Number(item.quantity);
+        }
+
+        // Debug logging for first few items
+        if (productMap.size < 3) {
+          console.log("Revenue calculation debug:", {
+            productName: item.productName,
+            totalPrice: item.totalPrice,
+            total: item.total,
+            sellPrice: item.sellPrice,
+            quantity: item.quantity,
+            calculatedRevenue: itemRevenue
+          });
+        }
+
         productMap.set(item.productId, {
           productName: item.productName,
           quantity: existing.quantity + item.quantity,
-          revenue: existing.revenue + (Number(item.total) || 0),
+          revenue: existing.revenue + itemRevenue,
           profit: existing.profit + (Number(profit) || 0),
         });
       });
@@ -227,51 +256,145 @@ const Reports = () => {
       .slice(0, 10);
   };
 
-  // Sales by category
+  // FIXED: Sales by category function with proper debugging and data handling
   const salesByCategory = () => {
-    // Use dashboard API data if available, which includes proper aggregated category data
-    if (dashboardData?.categoryDistribution) {
-      return dashboardData.categoryDistribution.map(cat => ({
-        category: cat._id,
-        revenue: cat.totalRevenue || 0,
-        quantity: cat.totalQuantity || 0,
-        sales: cat.totalSales || 0,
-      }));
+    console.log("=== Reports: salesByCategory Debug ===");
+    console.log("Dashboard data available:", !!dashboardData);
+    console.log(
+      "Dashboard categoryDistribution:",
+      dashboardData?.categoryDistribution
+    );
+    console.log("Filtered sales count:", filteredSales.length);
+    console.log("Products count:", products.length);
+
+    // Try dashboard data first, but with proper validation
+    if (
+      dashboardData?.categoryDistribution &&
+      Array.isArray(dashboardData.categoryDistribution) &&
+      dashboardData.categoryDistribution.length > 0
+    ) {
+      console.log("✅ Using dashboard API data for categories");
+      const dashboardCategories = dashboardData.categoryDistribution
+        .map((cat) => ({
+          category: cat._id || cat.name || "Unknown",
+          revenue: Number(cat.totalRevenue) || 0,
+          quantity: Number(cat.totalQuantity) || 0,
+          sales: Number(cat.totalSales) || 0,
+          profit: Number(cat.totalProfit) || 0, // Add profit if available
+        }))
+        .filter((cat) => cat.revenue > 0 || cat.quantity > 0); // Filter out empty categories
+
+      console.log("Dashboard categories processed:", dashboardCategories);
+      if (dashboardCategories.length > 0) {
+        return dashboardCategories;
+      }
     }
 
-    // Fallback to manual calculation if dashboard data not available
+    console.log("📊 Fallback to manual calculation from sales data");
+
+    // Safety checks
+    if (!Array.isArray(filteredSales) || filteredSales.length === 0) {
+      console.log("❌ No filtered sales available");
+      return [];
+    }
+
+    if (!Array.isArray(products) || products.length === 0) {
+      console.log("❌ No products available for category mapping");
+      return [];
+    }
+
     const categoryMap = new Map();
 
-    filteredSales.forEach((sale) => {
-      sale.products.forEach((item) => {
-        const product = products.find((p) => p.id === item.productId);
-        if (product) {
-          const existing = categoryMap.get(product.category) || {
-            category: product.category,
-            revenue: 0,
-            quantity: 0,
-            profit: 0,
-          };
+    filteredSales.forEach((sale, saleIndex) => {
+      if (!sale.products || !Array.isArray(sale.products)) {
+        console.log(`⚠️ Sale ${saleIndex} has no products array`);
+        return;
+      }
 
-          // Use pre-calculated profit if available, otherwise calculate
-          let profit;
-          if (item.totalProfit !== undefined && item.totalProfit !== null) {
-            profit = Number(item.totalProfit) || 0;
-          } else {
-            profit = calculateActualProfit(item, product);
+      sale.products.forEach((item, itemIndex) => {
+        // Find the product to get category
+        const product = products.find(
+          (p) => p.id === item.productId || p._id === item.productId
+        );
+
+        if (!product) {
+          if (saleIndex < 3 && itemIndex < 2) {
+            // Only log first few to avoid spam
+            console.log(`⚠️ Product not found for sale item:`, {
+              saleIndex,
+              itemIndex,
+              productId: item.productId,
+              productName: item.productName,
+            });
           }
+          return;
+        }
 
-          categoryMap.set(product.category, {
-            category: product.category,
-            revenue: existing.revenue + (Number(item.total) || 0),
-            quantity: existing.quantity + item.quantity,
-            profit: existing.profit + (Number(profit) || 0),
+        if (!product.category) {
+          console.log(`⚠️ Product ${product.name} has no category`);
+          return;
+        }
+
+        const category = product.category.trim();
+        const existing = categoryMap.get(category) || {
+          category,
+          revenue: 0,
+          quantity: 0,
+          profit: 0,
+          sales: 0,
+        };
+
+        // Calculate profit for this item
+        let itemProfit = 0;
+        if (item.totalProfit !== undefined && item.totalProfit !== null) {
+          itemProfit = Number(item.totalProfit) || 0;
+        } else {
+          itemProfit = calculateActualProfit(item, product);
+        }
+
+        const itemRevenue =
+          Number(item.totalPrice) ||
+          Number(item.total) ||
+          (Number(item.sellPrice) * Number(item.quantity)) ||
+          0;
+        const itemQuantity = Number(item.quantity) || 0;
+
+        categoryMap.set(category, {
+          category,
+          revenue: existing.revenue + itemRevenue,
+          quantity: existing.quantity + itemQuantity,
+          profit: existing.profit + itemProfit,
+          sales: existing.sales + 1, // Count number of sale items
+        });
+
+        // Log first few successful additions
+        if (categoryMap.size <= 3) {
+          console.log(`✅ Added to category '${category}':`, {
+            itemRevenue,
+            itemQuantity,
+            itemProfit,
+            newTotals: categoryMap.get(category),
           });
         }
       });
     });
 
-    return Array.from(categoryMap.values());
+    const result = Array.from(categoryMap.values()).filter(
+      (cat) => cat.revenue > 0 || cat.quantity > 0
+    );
+
+    console.log(`📈 Manual calculation result: ${result.length} categories`);
+    console.log(
+      "Categories found:",
+      result.map((c) => ({
+        name: c.category,
+        revenue: c.revenue,
+        quantity: c.quantity,
+      }))
+    );
+
+    // Sort by revenue descending
+    return result.sort((a, b) => b.revenue - a.revenue);
   };
 
   // Low stock report
@@ -281,27 +404,46 @@ const Reports = () => {
 
   // Inventory value by category
   const inventoryByCategory = () => {
+    console.log("=== inventoryByCategory Debug ===");
+    console.log("Products for inventory:", products.length);
+
     const categoryMap = new Map();
 
     products.forEach((product) => {
-      if (product.quantity > 0) {
-        const existing = categoryMap.get(product.category) || {
-          category: product.category,
-          value: 0,
-          quantity: 0,
-          products: 0,
-        };
-
-        categoryMap.set(product.category, {
-          category: product.category,
-          value: existing.value + product.sellPrice * product.quantity,
-          quantity: existing.quantity + product.quantity,
-          products: existing.products + 1,
-        });
+      if (!product || !product.category) {
+        console.log("⚠️ Product missing category:", product?.name);
+        return;
       }
+
+      const quantity = Number(product.quantity) || 0;
+      if (quantity <= 0) {
+        return; // Skip products with no stock
+      }
+
+      const sellPrice =
+        Number(product.currentSellPrice || product.sellPrice) || 0;
+      const category = product.category.trim();
+
+      const existing = categoryMap.get(category) || {
+        category,
+        value: 0,
+        quantity: 0,
+        products: 0,
+      };
+
+      categoryMap.set(category, {
+        category,
+        value: existing.value + sellPrice * quantity,
+        quantity: existing.quantity + quantity,
+        products: existing.products + 1,
+      });
     });
 
-    return Array.from(categoryMap.values());
+    const result = Array.from(categoryMap.values()).filter(
+      (cat) => cat.quantity > 0
+    );
+    console.log("Inventory categories:", result);
+    return result;
   };
 
   // Colors for charts
@@ -388,6 +530,66 @@ const Reports = () => {
     }
   };
 
+  // Get category data for the pie chart - prioritize backend data
+  const getCategoryData = () => {
+    // First try to use backend categoryDistribution data
+    if (dashboardData?.categoryDistribution && dashboardData.categoryDistribution.length > 0) {
+      console.log("✅ Using backend categoryDistribution data:", dashboardData.categoryDistribution);
+      return dashboardData.categoryDistribution.map(item => ({
+        category: item._id,
+        revenue: item.totalRevenue || 0,
+        quantity: item.totalQuantity || 0,
+        sales: item.totalSales || 0,
+        profit: 0 // Backend doesn't provide profit per category yet
+      }));
+    }
+
+    // Fallback to manual calculation
+    console.log("⚠️ Falling back to manual category calculation");
+    return salesByCategory();
+  };
+
+  const categoryData = getCategoryData();
+  const hasValidCategoryData =
+    categoryData &&
+    categoryData.length > 0 &&
+    categoryData.some((cat) =>
+      (cat.revenue || 0) > 0 ||
+      (cat.quantity || 0) > 0 ||
+      (cat.sales || 0) > 0
+    );
+
+  // Debug logging
+  console.log("=== CATEGORY DATA DEBUG ===");
+  console.log("categoryData:", categoryData);
+  console.log("hasValidCategoryData:", hasValidCategoryData);
+  console.log("dashboardData available:", !!dashboardData);
+  console.log("dashboardData.categoryDistribution:", dashboardData?.categoryDistribution);
+
+  // Custom tooltip for category pie chart
+  const CategoryTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white p-3 border rounded-lg shadow-lg">
+          <p className="font-semibold text-gray-900">{data.category}</p>
+          <p className="text-sm text-green-600">
+            Revenue: ${data.revenue?.toLocaleString() || 0}
+          </p>
+          <p className="text-sm text-blue-600">
+            Quantity: {data.quantity || 0}
+          </p>
+          {data.profit && (
+            <p className="text-sm text-purple-600">
+              Profit: ${data.profit?.toLocaleString() || 0}
+            </p>
+          )}
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -463,7 +665,9 @@ const Reports = () => {
                 <PopoverContent className="w-auto p-0" align="end">
                   <div className="flex">
                     <div className="p-3">
-                      <div className="text-sm font-medium mb-2">{t("start_date")}</div>
+                      <div className="text-sm font-medium mb-2">
+                        {t("start_date")}
+                      </div>
                       <Calendar
                         mode="single"
                         selected={startDate}
@@ -471,7 +675,9 @@ const Reports = () => {
                       />
                     </div>
                     <div className="p-3 border-l">
-                      <div className="text-sm font-medium mb-2">{t("end_date")}</div>
+                      <div className="text-sm font-medium mb-2">
+                        {t("end_date")}
+                      </div>
                       <Calendar
                         mode="single"
                         selected={endDate}
@@ -492,7 +698,9 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">{t("total_revenue")}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  {t("total_revenue")}
+                </p>
                 <p className="text-2xl font-bold text-green-600">
                   ${totalRevenue.toFixed(2)}
                 </p>
@@ -508,7 +716,9 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">{t("total_sales")}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  {t("total_sales")}
+                </p>
                 <p className="text-2xl font-bold text-blue-600">{totalSales}</p>
               </div>
               <div className="p-3 bg-blue-100 rounded-full">
@@ -522,7 +732,9 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">{t("total_profit_display")}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  {t("total_profit_display")}
+                </p>
                 <p className="text-2xl font-bold text-purple-600">
                   ${totalProfit.toFixed(2)}
                 </p>
@@ -538,7 +750,9 @@ const Reports = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">{t("avg_sale_value")}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  {t("avg_sale_value")}
+                </p>
                 <p className="text-2xl font-bold text-orange-600">
                   ${averageSaleValue.toFixed(2)}
                 </p>
@@ -602,33 +816,139 @@ const Reports = () => {
               </CardContent>
             </Card>
 
-            {/* Sales by Category */}
+            {/* FIXED: Sales by Category with proper debugging */}
             <Card>
               <CardHeader>
-                <CardTitle>{t("sales_by_category")}</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>{t("sales_by_category")}</span>
+                  <span className="text-sm text-gray-500 font-normal">
+                    ({categoryData.length} categories)
+                  </span>
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={salesByCategory()}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={120}
-                      dataKey="revenue"
-                      nameKey="category"
-                    >
-                      {salesByCategory().map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={COLORS[index % COLORS.length]}
-                        />
+                {hasValidCategoryData ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={categoryData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={120}
+                          dataKey="quantity"
+                          nameKey="category"
+                          label={({ category, percent }) =>
+                            percent > 0.05
+                              ? `${category} ${(percent * 100).toFixed(0)}%`
+                              : ""
+                          }
+                        >
+                          {categoryData.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<CategoryTooltip />} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+
+                    {/* Category summary */}
+                    <div className="mt-4 space-y-2">
+                      <h4 className="font-medium text-gray-700 text-sm">
+                        Top Categories:
+                      </h4>
+                      {categoryData.slice(0, 3).map((category, index) => (
+                        <div
+                          key={category.category}
+                          className="flex items-center justify-between text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{
+                                backgroundColor: COLORS[index % COLORS.length],
+                              }}
+                            ></div>
+                            <span className="font-medium">
+                              {category.category}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-green-600">
+                              ${category.revenue.toLocaleString()}
+                            </span>
+                            <br />
+                            <span className="text-xs text-gray-500">
+                              {category.quantity} items
+                            </span>
+                          </div>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`$${value}`, t("revenue")]} />
-                  </PieChart>
-                </ResponsiveContainer>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-[300px] text-gray-500">
+                    <Package className="w-16 h-16 mb-4 text-gray-300" />
+                    <h3 className="text-lg font-medium text-gray-700 mb-2">
+                      No Category Sales Data
+                    </h3>
+
+                    {filteredSales.length === 0 ? (
+                      <div className="text-center space-y-2">
+                        <p className="text-sm">
+                          No sales found for the selected time period.
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          Try selecting a different date range or make some
+                          sales.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center space-y-2">
+                        <p className="text-sm">
+                          Found {filteredSales.length} sales, but no category
+                          data is available.
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          Make sure your products have categories assigned.
+                        </p>
+
+                        {/* Debug info for development */}
+                        {process.env.NODE_ENV === "development" && (
+                          <details className="mt-4 text-left">
+                            <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-600">
+                              Debug Info (click to expand)
+                            </summary>
+                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs font-mono">
+                              <p>Filtered sales: {filteredSales.length}</p>
+                              <p>Products: {products.length}</p>
+                              <p>
+                                Products with categories:{" "}
+                                {products.filter((p) => p.category).length}
+                              </p>
+                              <p>Category data length: {categoryData.length}</p>
+                              <p>
+                                Dashboard data available:{" "}
+                                {dashboardData ? "Yes" : "No"}
+                              </p>
+                              {categoryData.length > 0 && (
+                                <p>
+                                  Sample category:{" "}
+                                  {JSON.stringify(categoryData[0], null, 2)}
+                                </p>
+                              )}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -689,7 +1009,10 @@ const Reports = () => {
                         <div>
                           <p className="font-medium">{product.productName}</p>
                           <p className="text-sm text-gray-600">
-                            {t("sold_units").replace("{count}", String(product.quantity))}
+                            {t("sold_units").replace(
+                              "{count}",
+                              String(product.quantity)
+                            )}
                           </p>
                         </div>
                         <div className="text-right">
@@ -713,20 +1036,39 @@ const Reports = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {salesByCategory().map((category, index) => (
-                    <div key={index} className="p-3 border rounded-lg">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium">{category.category}</span>
-                        <Badge variant="secondary">
-                          {t("sold_units").replace("{count}", String(category.quantity))}
-                        </Badge>
+                  {categoryData.length > 0 ? (
+                    categoryData.map((category, index) => (
+                      <div key={index} className="p-3 border rounded-lg">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium">
+                            {category.category}
+                          </span>
+                          <Badge variant="secondary">
+                            {t("sold_units").replace(
+                              "{count}",
+                              String(category.quantity || 0)
+                            )}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between text-sm text-gray-600">
+                          <span>
+                            {t("revenue")}: $
+                            {(category.revenue || 0).toFixed(2)}
+                          </span>
+                          <span>
+                            {t("profit")}: ${(category.profit || 0).toFixed(2)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>{t("revenue")}: ${category.revenue.toFixed(2)}</span>
-                        <span>{t("profit")}: ${category.profit.toFixed(2)}</span>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No category performance data available</p>
+                      <p className="text-sm">
+                        Make sales to see category performance
+                      </p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -788,29 +1130,51 @@ const Reports = () => {
                 <CardTitle>{t("inventory_value_by_category")}</CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={inventoryByCategory()}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={120}
-                      dataKey="value"
-                      nameKey="category"
-                    >
-                      {inventoryByCategory().map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => [`$${value}`, t("inventory_value")]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                {inventoryByCategory().length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={inventoryByCategory()}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={120}
+                        dataKey="value"
+                        nameKey="category"
+                        label={({ category, percent }) =>
+                          percent > 0.05
+                            ? `${category} ${(percent * 100).toFixed(0)}%`
+                            : ""
+                        }
+                      >
+                        {inventoryByCategory().map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => [
+                          `${value}`,
+                          t("inventory_value"),
+                        ]}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                    <div className="text-center">
+                      <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                      <p className="font-medium">No Inventory Data</p>
+                      <p className="text-sm">
+                        Add products with stock to see inventory value by
+                        category
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -822,28 +1186,47 @@ const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-3">{t("category")}</th>
-                      <th className="text-right p-3">{t("products")}</th>
-                      <th className="text-right p-3">{t("total_quantity")}</th>
-                      <th className="text-right p-3">{t("inventory_value")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventoryByCategory().map((category, index) => (
-                      <tr key={index} className="border-b hover:bg-gray-50">
-                        <td className="p-3 font-medium">{category.category}</td>
-                        <td className="p-3 text-right">{category.products}</td>
-                        <td className="p-3 text-right">{category.quantity}</td>
-                        <td className="p-3 text-right font-medium text-green-600">
-                          ${category.value.toFixed(2)}
-                        </td>
+                {inventoryByCategory().length > 0 ? (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-3">{t("category")}</th>
+                        <th className="text-right p-3">{t("products")}</th>
+                        <th className="text-right p-3">
+                          {t("total_quantity")}
+                        </th>
+                        <th className="text-right p-3">
+                          {t("inventory_value")}
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {inventoryByCategory().map((category, index) => (
+                        <tr key={index} className="border-b hover:bg-gray-50">
+                          <td className="p-3 font-medium">
+                            {category.category}
+                          </td>
+                          <td className="p-3 text-right">
+                            {category.products}
+                          </td>
+                          <td className="p-3 text-right">
+                            {category.quantity}
+                          </td>
+                          <td className="p-3 text-right font-medium text-green-600">
+                            ${category.value.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No inventory data available</p>
+                    <p className="text-sm">
+                      Add products with stock to see summary
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -883,7 +1266,10 @@ const Reports = () => {
                 </div>
                 <p className="text-gray-600">{t("avg_sale_value")}</p>
                 <div className="mt-2 text-sm text-gray-500">
-                  {t("from_transactions").replace("{count}", String(totalSales))}
+                  {t("from_transactions").replace(
+                    "{count}",
+                    String(totalSales)
+                  )}
                 </div>
               </CardContent>
             </Card>

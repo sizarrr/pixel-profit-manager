@@ -254,6 +254,12 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
       ]).catch((err) => {
         console.error("❌ Sales by category error:", err);
         return [];
+      }).then((result) => {
+        console.log("🏷️ Category Distribution Debug:");
+        console.log("- Date range:", { start, end });
+        console.log("- Raw result:", result);
+        console.log("- Result count:", result?.length || 0);
+        return result;
       }),
 
       // Monthly sales data (last 12 months) - FIXED
@@ -393,7 +399,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                     { $and: [
                       { $ne: ["$products.sellPrice", null] },
                       { $ne: ["$products.sellPrice", ""] },
-                      { $type: ["$products.sellPrice", "number"] }
+                      { $isNumber: "$products.sellPrice" }
                     ]},
                     { $toDouble: "$products.sellPrice" },
                     0
@@ -404,7 +410,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                     { $and: [
                       { $ne: ["$products.quantity", null] },
                       { $ne: ["$products.quantity", ""] },
-                      { $type: ["$products.quantity", "number"] }
+                      { $isNumber: "$products.quantity" }
                     ]},
                     { $toDouble: "$products.quantity" },
                     0
@@ -422,7 +428,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                 { $and: [
                   { $ne: ["$productData.currentBuyPrice", null] },
                   { $ne: ["$productData.currentBuyPrice", ""] },
-                  { $type: ["$productData.currentBuyPrice", "number"] }
+                  { $isNumber: "$productData.currentBuyPrice" }
                 ]},
                 { $toDouble: "$productData.currentBuyPrice" },
                 {
@@ -430,7 +436,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                     { $and: [
                       { $ne: ["$productData.buyPrice", null] },
                       { $ne: ["$productData.buyPrice", ""] },
-                      { $type: ["$productData.buyPrice", "number"] }
+                      { $isNumber: "$productData.buyPrice" }
                     ]},
                     { $toDouble: "$productData.buyPrice" },
                     {
@@ -440,7 +446,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                             { $and: [
                               { $ne: ["$products.sellPrice", null] },
                               { $ne: ["$products.sellPrice", ""] },
-                              { $type: ["$products.sellPrice", "number"] }
+                              { $isNumber: "$products.sellPrice" }
                             ]},
                             { $toDouble: "$products.sellPrice" },
                             0
@@ -463,7 +469,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   $cond: [
                     { $and: [
                       { $ne: ["$unitCost", null] },
-                      { $type: ["$unitCost", "number"] }
+                      { $isNumber: "$unitCost" }
                     ]},
                     "$unitCost",
                     0
@@ -474,7 +480,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                     { $and: [
                       { $ne: ["$products.quantity", null] },
                       { $ne: ["$products.quantity", ""] },
-                      { $type: ["$products.quantity", "number"] }
+                      { $isNumber: "$products.quantity" }
                     ]},
                     { $toDouble: "$products.quantity" },
                     0
@@ -488,7 +494,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   $cond: [
                     { $and: [
                       { $ne: ["$sellAmount", null] },
-                      { $type: ["$sellAmount", "number"] }
+                      { $isNumber: "$sellAmount" }
                     ]},
                     "$sellAmount",
                     0
@@ -508,7 +514,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   {
                     $and: [
                       { $ne: ["$estimatedProfit", null] },
-                      { $type: ["$estimatedProfit", "number"] },
+                      { $isNumber: "$estimatedProfit" },
                     ],
                   },
                   "$estimatedProfit",
@@ -522,7 +528,7 @@ export const getDashboardOverview = catchAsync(async (req, res, next) => {
                   {
                     $and: [
                       { $ne: ["$sellAmount", null] },
-                      { $type: ["$sellAmount", "number"] },
+                      { $isNumber: "$sellAmount" },
                     ],
                   },
                   "$sellAmount",

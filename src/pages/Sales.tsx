@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Layers,
   Info,
+  CreditCard,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -77,8 +78,12 @@ const Sales = () => {
   const [cashierName, setCashierName] = useState("Store Manager");
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
-    "cash" | "card" | "digital"
+    "cash" | "card" | "digital" | "loan"
   >("cash");
+
+  // Loan-specific state
+  const [showLoanForm, setShowLoanForm] = useState(false);
+  const [loanCustomerPhone, setLoanCustomerPhone] = useState("");
 
   // Refs
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -387,6 +392,18 @@ const Sales = () => {
       return;
     }
 
+    // Loan sale validation
+    if (paymentMethod === "loan") {
+      if (!customerName.trim()) {
+        toast({
+          title: "Customer Name Required",
+          description: "Please enter customer name for loan sales",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // Pre-sale stock validation
     for (const cartItem of cart) {
       const product = products.find((p) => p.id === cartItem.productId);
@@ -410,47 +427,96 @@ const Sales = () => {
         0
       );
 
-      // Prepare enhanced sale data for FIFO processing
-      const saleData = {
-        products: cart.map((item) => {
-          const originalProduct = products.find((p) => p.id === item.productId);
+      // Handle loan sales differently - create loan directly
+      if (paymentMethod === "loan") {
+        console.log("🏦 Creating loan directly...");
 
-          if (!originalProduct) {
-            throw new Error(`Product not found: ${item.productName}`);
-          }
+        const loanData = {
+          customerName: customerName.trim(),
+          customerPhone: loanCustomerPhone.trim() || "N/A",
+          customerAddress: "",
+          customerEmail: "",
+          cashierName: cashierName.trim(),
+          products: cart.map((item) => {
+            const originalProduct = products.find((p) => p.id === item.productId);
+            if (!originalProduct) {
+              throw new Error(`Product not found: ${item.productName}`);
+            }
+            return {
+              productId: originalProduct._id,
+              productName: item.productName.trim(),
+              quantity: Number(item.quantity),
+              sellPrice: Number(item.sellPrice),
+              total: Math.round(item.sellPrice * item.quantity * 100) / 100,
+            };
+          }),
+          totalAmount: Math.round(calculatedTotal * 100) / 100,
+          downPayment: 0,
+          interestRate: 0,
+          loanTerm: 30,
+          notes: "Direct loan creation from sales"
+        };
 
-          const itemTotal =
-            Math.round(item.sellPrice * item.quantity * 100) / 100;
+        const response = await fetch("http://localhost:5000/api/v1/loans/direct", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(loanData),
+        });
 
-          return {
-            productId: originalProduct._id, // Use MongoDB _id
-            productName: item.productName.trim(),
-            quantity: Number(item.quantity),
-            sellPrice: Number(item.sellPrice),
-            total: itemTotal,
-          };
-        }),
-        totalAmount: Math.round(calculatedTotal * 100) / 100,
-        cashierName: cashierName.trim(),
-        paymentMethod: paymentMethod,
-        customerName: customerName.trim() || undefined,
-        // Additional FIFO metadata
-        notes: `FIFO sale processed at ${new Date().toISOString()}`,
-        taxRate: 0, // Can be configured
-        discountAmount: 0, // Can be configured
-      };
+        if (!response.ok) {
+          throw new Error("Failed to create loan");
+        }
 
-      console.log("📤 Sending FIFO sale data:", saleData);
+        const loanResult = await response.json();
+        console.log("📋 Loan created successfully:", loanResult);
 
-      // Process the sale through FIFO system
-      await addSale(saleData);
+      } else {
+        // Regular sale processing
+        const saleData = {
+          products: cart.map((item) => {
+            const originalProduct = products.find((p) => p.id === item.productId);
+
+            if (!originalProduct) {
+              throw new Error(`Product not found: ${item.productName}`);
+            }
+
+            const itemTotal =
+              Math.round(item.sellPrice * item.quantity * 100) / 100;
+
+            return {
+              productId: originalProduct._id, // Use MongoDB _id
+              productName: item.productName.trim(),
+              quantity: Number(item.quantity),
+              sellPrice: Number(item.sellPrice),
+              total: itemTotal,
+            };
+          }),
+          totalAmount: Math.round(calculatedTotal * 100) / 100,
+          cashierName: cashierName.trim(),
+          paymentMethod: paymentMethod,
+          customerName: customerName.trim() || undefined,
+          // Additional FIFO metadata
+          notes: `FIFO sale processed at ${new Date().toISOString()}`,
+          taxRate: 0, // Can be configured
+          discountAmount: 0, // Can be configured
+        };
+
+        console.log("📤 Sending FIFO sale data:", saleData);
+
+        // Process the sale through FIFO system
+        await addSale(saleData);
+      }
 
       // Success feedback
+      const successMessage = paymentMethod === "loan"
+        ? `Loan Created! 🏦 Total: $${calculatedTotal.toFixed(2)} • Customer: ${customerName} • Phone: ${loanCustomerPhone}`
+        : `Sale Completed Successfully! 🎉 Total: $${calculatedTotal.toFixed(2)} • FIFO inventory updated`;
+
       toast({
-        title: "Sale Completed Successfully! 🎉",
-        description: `Total: $${saleData.totalAmount.toFixed(
-          2
-        )} • FIFO inventory updated`,
+        title: paymentMethod === "loan" ? "Loan Sale Created! 🏦" : "Sale Completed Successfully! 🎉",
+        description: successMessage,
         duration: 5000,
       });
 
@@ -472,6 +538,9 @@ const Sales = () => {
       setBarcodeInput("");
       setSearchTerm("");
       setCustomerName("");
+      setLoanCustomerPhone("");
+      setShowLoanForm(false);
+      setPaymentMethod("cash");
       setShowFIFOPreview(false);
       setFIFOPreview([]);
 
@@ -641,16 +710,6 @@ const Sales = () => {
             FIFO Inventory System Active - Accurate cost tracking enabled
           </p>
         </div>
-
-        {/* FIFO System Info */}
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>FIFO Active:</strong> All sales will use First-In-First-Out
-            inventory allocation for accurate profit calculation. Oldest stock
-            will be automatically allocated first.
-          </AlertDescription>
-        </Alert>
 
         {/* Enhanced Barcode Scanner */}
         <Card className="border-2 border-blue-200 bg-blue-50">
@@ -848,18 +907,66 @@ const Sales = () => {
               </label>
               <select
                 value={paymentMethod}
-                onChange={(e) =>
-                  setPaymentMethod(
-                    e.target.value as "cash" | "card" | "digital"
-                  )
-                }
+                onChange={(e) => {
+                  const value = e.target.value as "cash" | "card" | "digital" | "loan";
+                  setPaymentMethod(value);
+                  setShowLoanForm(value === "loan");
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="digital">Digital Payment</option>
+                <option value="cash">💵 Cash</option>
+                <option value="card">💳 Card</option>
+                <option value="digital">📱 Digital Payment</option>
+                <option value="loan">🏦 Credit/Loan</option>
               </select>
             </div>
+
+            {/* Simple Loan Form */}
+            {showLoanForm && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+                <h4 className="font-medium text-blue-900 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" />
+                  Credit/Loan Customer Details
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 block">
+                      Customer Name *
+                    </label>
+                    <Input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Enter customer name"
+                      className="h-10"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 block">
+                      Customer Phone
+                    </label>
+                    <Input
+                      type="tel"
+                      value={loanCustomerPhone}
+                      onChange={(e) => setLoanCustomerPhone(e.target.value)}
+                      placeholder="Enter customer phone (optional)"
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Note:</strong> Customer name is required for loan sales. Phone is optional.
+                    This sale will be tracked in the Credit & Loan management system.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
           </CardContent>
         </Card>
 
@@ -870,12 +977,6 @@ const Sales = () => {
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-5 h-5" />
                 Shopping Cart ({cartSummary.itemCount})
-                {cartSummary.fifoItemsCount > 0 && (
-                  <Badge className="bg-blue-100 text-blue-800">
-                    <Layers className="w-3 h-3 mr-1" />
-                    {cartSummary.fifoItemsCount} FIFO
-                  </Badge>
-                )}
               </div>
               {cart.length > 0 && (
                 <div className="flex items-center gap-2">
